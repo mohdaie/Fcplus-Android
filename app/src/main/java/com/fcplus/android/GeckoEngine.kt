@@ -42,6 +42,19 @@ object GeckoEngine {
         return session
     }
 
+    fun reloadEa(context: Context) {
+        val session = eaSession(context)
+        session.setActive(true)
+        session.loadUri(EA_URL)
+        AppState.update {
+            it.copy(
+                engineStatus = "Reloading EA mobile session",
+                lastEvent = "EA session reload requested",
+                pageUrl = EA_URL
+            )
+        }
+    }
+
     fun newEaSession(context: Context): GeckoSession {
         val settings = GeckoSessionSettings.Builder()
             .allowJavascript(true)
