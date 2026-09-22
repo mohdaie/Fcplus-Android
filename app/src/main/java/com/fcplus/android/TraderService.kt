@@ -47,7 +47,20 @@ class TraderService : Service() {
         if (TradingStore.running) return START_NOT_STICKY
         val error = TradingStore.start()
         if (error != null) { TradingStore.stop(error); stopSelf(); return START_NOT_STICKY }
-        GeckoEngine.eaSession(this).setActive(true)
+        val session = GeckoEngine.eaSession(this)
+        session.setActive(true)
+        val lastSnapshot = TradingStore.snapshot.optLong("capturedAt")
+        val staleAtStart = lastSnapshot <= 0 || System.currentTimeMillis() - lastSnapshot > 10000
+        if (staleAtStart) {
+            session.loadUri(GeckoEngine.EA_URL)
+            AppState.update {
+                it.copy(
+                    running = true,
+                    engineStatus = "Waking EA market bridge",
+                    lastEvent = "Reloading EA session once so the background scanner can attach"
+                )
+            }
+        }
         wakeLock = (getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"FCPlus::Trader").apply {
             setReferenceCounted(false); acquire((TradingStore.deadline - System.currentTimeMillis()).coerceAtLeast(1000))
         }
