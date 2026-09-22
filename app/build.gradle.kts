@@ -12,8 +12,8 @@ android {
         applicationId = "com.fcplus.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.3.0"
+        versionCode = 14
+        versionName = "0.5.1"
 
         ndk {
             abiFilters += "arm64-v8a"

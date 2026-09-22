@@ -49,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -73,6 +74,9 @@ class MainActivity : ComponentActivity() {
                         },
                         onStop = {
                             stopService(Intent(this, TraderService::class.java))
+                        },
+                        onReload = {
+                            GeckoEngine.reloadEa(this)
                         }
                     )
                 }
@@ -88,7 +92,8 @@ private val GeminiGradient = Brush.linearGradient(
 @Composable
 private fun FcPlusApp(
     onStart: () -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
+    onReload: () -> Unit
 ) {
     val status by AppState.status.collectAsState()
     var tab by remember { mutableIntStateOf(0) }
@@ -131,18 +136,16 @@ private fun FcPlusApp(
             }
         }
     ) { padding ->
-        when (tab) {
-            0 -> Dashboard(
-                modifier = Modifier.padding(padding),
+        Box(Modifier.padding(padding).fillMaxSize()) {
+            // Keep one GeckoView attached: dashboard/EA tabs share the authenticated session.
+            EaWebView(modifier = Modifier.fillMaxSize().alpha(if (tab == 1) 1f else 0f))
+            if (tab == 0) Dashboard(
+                modifier = Modifier,
                 status = status,
                 onStart = onStart,
                 onStop = onStop,
+                onReload = onReload,
                 onVersion = { showVersionDialog = true }
-            )
-            else -> EaWebView(
-                modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize()
             )
         }
     }
@@ -164,7 +167,7 @@ private fun FcPlusApp(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Version " + BuildConfig.VERSION_NAME, color = GeminiText)
                     Text("Build " + BuildConfig.VERSION_CODE)
-                    Text("Market Bridge · Quick Flip · Chem Flip")
+                    Text("Trader · EA service adapter · AI Scout")
                 }
             },
             confirmButton = {
@@ -182,6 +185,7 @@ private fun Dashboard(
     status: FcStatus,
     onStart: () -> Unit,
     onStop: () -> Unit,
+    onReload: () -> Unit,
     onVersion: () -> Unit
 ) {
     Column(
@@ -202,15 +206,13 @@ private fun Dashboard(
                 Spacer(Modifier.size(10.dp))
                 Column {
                     Text("Market Brain", style = MaterialTheme.typography.headlineLarge, color = GeminiText)
-                    Text("EA live market telemetry", style = MaterialTheme.typography.bodyMedium, color = GeminiMuted)
+                    Text("Verified trades · bounded sessions", style = MaterialTheme.typography.bodyMedium, color = GeminiMuted)
                 }
             }
             VersionChip(onClick = onVersion)
         }
 
-        StatusCard(status)
-        StrategyCard(status)
-        MarketCard(status)
+        TradePanel()
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -230,6 +232,13 @@ private fun Dashboard(
             )
         }
 
+        SecondaryAction(
+            text = "RELOAD EA",
+            enabled = !status.running,
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onReload
+        )
+
         InfoCard(
             title = "EA session",
             eyebrow = "FIREFOX ENGINE",
@@ -245,219 +254,10 @@ private fun Dashboard(
         )
 
         Text(
-            "v0.3 reads EA market data and calculates trade ceilings in Dry Run. It does not place live bids yet. Security/CAPTCHA text always hard-stops the background service.",
+            "Orders require fresh EA data and verified card/auction identities. Unrecognized screens pause execution. Daily profit uses confirmed sales after 5% tax; there is no profit guarantee.",
             color = GeminiMuted,
             style = MaterialTheme.typography.bodyMedium
         )
-    }
-}
-
-@Composable
-private fun StatusCard(status: FcStatus) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = GeminiSurface),
-        border = BorderStroke(1.dp, GeminiStroke),
-        shape = RoundedCornerShape(24.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        if (status.running) "Market Brain active" else "Market Brain stopped",
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = GeminiText
-                    )
-                    Text(status.engineStatus, style = MaterialTheme.typography.bodyMedium, color = GeminiMuted)
-                }
-                Box(
-                    Modifier
-                        .size(12.dp)
-                        .clip(RoundedCornerShape(99.dp))
-                        .background(if (status.running) GeminiGreen else GeminiMuted.copy(alpha = .45f))
-                )
-            }
-
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Dry run", color = GeminiText)
-                Switch(
-                    checked = status.dryRun,
-                    onCheckedChange = { checked -> AppState.update { it.copy(dryRun = checked) } },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = GeminiPurple,
-                        uncheckedThumbColor = GeminiMuted,
-                        uncheckedTrackColor = GeminiSurface2
-                    )
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun StrategyCard(status: FcStatus) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = GeminiSurface),
-        border = BorderStroke(1.dp, GeminiStroke),
-        shape = RoundedCornerShape(22.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("STRATEGY", color = GeminiPurple, style = MaterialTheme.typography.labelLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StrategyPill("Quick Flip", status.strategy == "Quick Flip") {
-                    AppState.update { it.copy(strategy = "Quick Flip") }
-                    AppState.recalculate()
-                }
-                StrategyPill("Chem Flip", status.strategy == "Chem Flip") {
-                    AppState.update { it.copy(strategy = "Chem Flip") }
-                    AppState.recalculate()
-                }
-            }
-
-            SettingStepper(
-                label = "Minimum profit",
-                value = status.minProfit.toString() + " coins",
-                onMinus = {
-                    AppState.update { it.copy(minProfit = maxOf(0, it.minProfit - 50)) }
-                    AppState.recalculate()
-                },
-                onPlus = {
-                    AppState.update { it.copy(minProfit = it.minProfit + 50) }
-                    AppState.recalculate()
-                }
-            )
-
-            SettingStepper(
-                label = "Minimum ROI",
-                value = status.minRoiPercent.toString() + "%",
-                onMinus = {
-                    AppState.update { it.copy(minRoiPercent = maxOf(0, it.minRoiPercent - 1)) }
-                    AppState.recalculate()
-                },
-                onPlus = {
-                    AppState.update { it.copy(minRoiPercent = minOf(100, it.minRoiPercent + 1)) }
-                    AppState.recalculate()
-                }
-            )
-        }
-    }
-}
-
-@Composable
-private fun MarketCard(status: FcStatus) {
-    val advice = status.advice
-    val market = status.market
-
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (advice.recommended) Color(0xFF10251F) else GeminiSurface
-        ),
-        border = BorderStroke(1.dp, if (advice.recommended) GeminiGreen.copy(alpha = .65f) else GeminiStroke),
-        shape = RoundedCornerShape(22.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("LIVE MARKET", color = if (advice.recommended) GeminiGreen else GeminiCyan, style = MaterialTheme.typography.labelLarge)
-                    Text(
-                        market.playerName.ifBlank { market.pageType.uppercase() },
-                        color = GeminiText,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                }
-                Text(advice.confidence, color = GeminiMuted, style = MaterialTheme.typography.labelLarge)
-            }
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Metric("MIN BIN", MarketBrain.format(advice.minBin))
-                Metric("STABLE", MarketBrain.format(advice.stableBin))
-                Metric("MAX BID", MarketBrain.format(advice.maxBid))
-            }
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Metric("MIN BID", MarketBrain.format(advice.minBid))
-                Metric("OPPS", advice.opportunities.toString())
-                Metric("EST PROFIT", if (advice.expectedProfit > 0) "+" + MarketBrain.format(advice.expectedProfit) else "—")
-            }
-
-            if (market.chemStyle.isNotBlank()) {
-                Text("Chemistry style: " + market.chemStyle, color = GeminiPurple, style = MaterialTheme.typography.bodyMedium)
-            }
-
-            Text(
-                advice.summary,
-                color = if (advice.recommended) GeminiText else GeminiMuted,
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-    }
-}
-
-@Composable
-private fun Metric(label: String, value: String) {
-    Column {
-        Text(label, color = GeminiMuted, style = MaterialTheme.typography.bodyMedium)
-        Text(value, color = GeminiText, style = MaterialTheme.typography.titleMedium)
-    }
-}
-
-@Composable
-private fun StrategyPill(text: String, selected: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .clip(RoundedCornerShape(99.dp))
-            .background(if (selected) GeminiPurple else GeminiSurface2)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 9.dp)
-    ) {
-        Text(text, color = if (selected) Color.White else GeminiMuted, style = MaterialTheme.typography.labelLarge)
-    }
-}
-
-@Composable
-private fun SettingStepper(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column {
-            Text(label, color = GeminiMuted, style = MaterialTheme.typography.bodyMedium)
-            Text(value, color = GeminiText, style = MaterialTheme.typography.titleMedium)
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MiniButton("−", onMinus)
-            MiniButton("+", onPlus)
-        }
-    }
-}
-
-@Composable
-private fun MiniButton(text: String, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .size(36.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(GeminiSurface2)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(text, color = GeminiCyan, style = MaterialTheme.typography.titleMedium)
     }
 }
 

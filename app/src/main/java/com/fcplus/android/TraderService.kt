@@ -6,141 +6,82 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
-import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
-import org.mozilla.geckoview.GeckoSession
 
 class TraderService : Service() {
-    companion object {
-        const val CHANNEL_ID = "fcplus_trader"
-        const val NOTIFICATION_ID = 2701
-    }
-
-    private var engineSession: GeckoSession? = null
     private var wakeLock: PowerManager.WakeLock? = null
-
-    override fun onCreate() {
-        super.onCreate()
-        createChannel()
-        startForeground(NOTIFICATION_ID, buildNotification("Starting Market Brain"))
-
-        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
-        wakeLock = powerManager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "FCPlus::Trader"
-        ).apply {
-            setReferenceCounted(false)
-            acquire(30 * 60 * 1000L)
-        }
-
-        AppState.update {
-            it.copy(
-                running = true,
-                securityStop = false,
-                engineStatus = "Starting background Market Brain",
-                lastEvent = "Foreground service started"
-            )
-        }
-
-        startBackgroundSession()
-    }
-
-    private fun startBackgroundSession() {
-        val session = GeckoEngine.newEaSession(this)
-        engineSession = session
-
-        session.contentDelegate = object : GeckoSession.ContentDelegate {
-            override fun onTitleChange(session: GeckoSession, title: String?) {
-                AppState.update {
-                    it.copy(pageTitle = title.orEmpty(), engineStatus = "Background EA session active")
-                }
+    private val handler = Handler(Looper.getMainLooper())
+    private val watchdog = object : Runnable {
+        override fun run() {
+            if (!TradingStore.running || System.currentTimeMillis() >= TradingStore.deadline) {
+                if (TradingStore.running) TradingStore.stop("Session time limit reached")
+                stopSelf(); return
             }
-        }
-
-        session.progressDelegate = object : GeckoSession.ProgressDelegate {
-            override fun onPageStart(session: GeckoSession, url: String) {
-                AppState.update { it.copy(pageUrl = url, engineStatus = "Background EA loading") }
-            }
-
-            override fun onPageStop(session: GeckoSession, success: Boolean) {
+            val last = TradingStore.snapshot.optLong("capturedAt")
+            val stale = last <= 0 || System.currentTimeMillis() - last > 30000
+            if (stale) {
                 AppState.update {
                     it.copy(
                         running = true,
-                        engineStatus = if (success) "Background Market Brain active" else "Background EA load failed",
-                        lastEvent = if (success) "Background EA page loaded" else "Background EA load failed"
+                        engineStatus = "Trader active · waiting for fresh EA data",
+                        lastEvent = "EA page is quiet; no trade action will run until fresh data arrives"
                     )
                 }
-                updateNotification(
-                    if (success) {
-                        "Market Brain active · " + if (AppState.status.value.dryRun) "Dry Run" else "Live"
-                    } else {
-                        "EA background load failed"
-                    }
+            }
+            val message = if (stale) "Waiting for fresh EA data" else TradingStore.state.optString("message", "Monitoring EA")
+            getSystemService(NotificationManager::class.java).notify(2701, notification(message))
+            handler.postDelayed(this, 5000)
+        }
+    }
+    override fun onCreate() {
+        super.onCreate()
+        getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("fcplus_trader", "FC+ trader", NotificationManager.IMPORTANCE_LOW))
+        startForeground(2701, notification("Starting bounded trading session"))
+    }
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == "STOP") { TradingStore.stop("Stopped by you"); stopSelf(); return START_NOT_STICKY }
+        if (TradingStore.running) return START_NOT_STICKY
+        val error = TradingStore.start()
+        if (error != null) { TradingStore.stop(error); stopSelf(); return START_NOT_STICKY }
+        val session = GeckoEngine.eaSession(this)
+        session.setActive(true)
+        val lastSnapshot = TradingStore.snapshot.optLong("capturedAt")
+        val staleAtStart = lastSnapshot <= 0 || System.currentTimeMillis() - lastSnapshot > 10000
+        if (staleAtStart) {
+            session.loadUri(GeckoEngine.EA_URL)
+            AppState.update {
+                it.copy(
+                    running = true,
+                    engineStatus = "Waking EA market bridge",
+                    lastEvent = "Reloading EA session once so the background scanner can attach"
                 )
             }
         }
-
-        FcExtensionBridge.wireSession(this, session) {
-            session.setActive(true)
-            session.loadUri(GeckoEngine.EA_URL)
+        wakeLock = (getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"FCPlus::Trader").apply {
+            setReferenceCounted(false); acquire((TradingStore.deadline - System.currentTimeMillis()).coerceAtLeast(1000))
         }
+        AppState.update { it.copy(running = true, securityStop = false, engineStatus = "Trader active · " + if (TradingStore.settings.optBoolean("dryRun",true)) "Dry Run" else "Live") }
+        handler.post(watchdog)
+        return START_NOT_STICKY
     }
-
-    private fun buildNotification(text: String): Notification {
-        val launchIntent = Intent(this, MainActivity::class.java)
-        val pending = PendingIntent.getActivity(
-            this,
-            0,
-            launchIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle("FC+ Market Brain")
-            .setContentText(text)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setContentIntent(pending)
-            .build()
+    private fun notification(message: String): Notification {
+        val launch = PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val stop = PendingIntent.getService(this,1,Intent(this,TraderService::class.java).setAction("STOP"),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        return NotificationCompat.Builder(this,"fcplus_trader").setSmallIcon(android.R.drawable.ic_media_play)
+            .setContentTitle("FC+ · " + if (TradingStore.settings.optBoolean("dryRun",true)) "Dry Run" else "Live trader")
+            .setContentText(message).setContentIntent(launch).setOngoing(true).setOnlyAlertOnce(true)
+            .addAction(android.R.drawable.ic_media_pause,"Stop",stop).build()
     }
-
-    private fun updateNotification(text: String) {
-        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIFICATION_ID, buildNotification(text))
-    }
-
-    private fun createChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "FC+ background trader",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            channel.description = "Keeps FC+ Market Brain active in the background."
-            val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
-        }
-    }
-
     override fun onDestroy() {
-        runCatching { engineSession?.setActive(false) }
-        runCatching { engineSession?.close() }
-        engineSession = null
-
+        handler.removeCallbacksAndMessages(null)
         if (wakeLock?.isHeld == true) wakeLock?.release()
-
-        AppState.update {
-            it.copy(
-                running = false,
-                engineStatus = if (it.securityStop) it.engineStatus else "Stopped",
-                lastEvent = if (it.securityStop) it.lastEvent else "Background service stopped"
-            )
-        }
+        if (TradingStore.running) TradingStore.stop("Trading service stopped")
         super.onDestroy()
     }
-
+    override fun onTimeout(startId: Int, fgsType: Int) { TradingStore.stop("Android background time limit reached"); stopSelf() }
     override fun onBind(intent: Intent?): IBinder? = null
 }

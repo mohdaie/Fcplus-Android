@@ -1,21 +1,31 @@
 {
   "manifest_version": 2,
   "name": "FC+ Market Bridge",
-  "version": "0.3.0",
-  "description": "Read-only EA market telemetry bridge for FC+ Android.",
+  "version": "0.5.1",
+  "description": "FC+ verified market execution and persistent trade ledger.",
   "browser_specific_settings": {
-    "gecko": { "id": "fcplus@marketbrain" }
+    "gecko": {
+      "id": "fcplus@marketbrain"
+    }
   },
   "permissions": [
     "nativeMessaging",
     "nativeMessagingFromContent",
     "geckoViewAddons"
   ],
+  "web_accessible_resources": [
+    "ea-service-observer.js"
+  ],
   "content_scripts": [
     {
-      "matches": ["https://ea.com/*", "https://*.ea.com/*"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
+      "matches": [
+        "https://www.ea.com/ea-sports-fc/ultimate-team/web-app/*"
+      ],
+      "js": [
+        "trader-core.js",
+        "content.js"
+      ],
+      "run_at": "document_start"
     }
   ]
 }
