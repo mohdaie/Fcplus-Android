@@ -11,6 +11,11 @@
   }
   function nextBid(row) { return row.currentBid > 0 ? row.currentBid + step(row.currentBid) : row.startPrice; }
   function net(p) { return Math.floor(p * 95 / 100); }
+  function normalizedName(value) {
+    return String(value || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+  function sameName(a, b) { return normalizedName(a) === normalizedName(b); }
   function utcDay(now) { return Math.floor(now / DAY); }
   function fresh(now) { return { schema: 1, ledger: [], pending: null, targetIndex: 0, nextAt: 0, seq: 0, runId: '', startedAt: 0, day: utcDay(now), dayProfit: 0, sessionSpent: 0, sessionActions: 0, logs: [] }; }
   function log(s, text, now) { s.logs = [{ at: now, text }, ...(s.logs || [])].slice(0, 80); s.message = text; }
@@ -91,7 +96,7 @@
       if (financial && c.dryRun) { log(s, 'DRY RUN: would ' + type + ' ' + action.name + ' at ' + action.amount + ' (no order sent)', now); return done(); }
       if (financial) s.pending = action;
       s.sessionActions++;
-      log(s, (financial ? 'Submitting ' : '') + type + (action.name ? ' · ' + action.name : ''), now);
+      log(s, action.note || ((financial ? 'Submitting ' : '') + type + (action.name ? ' · ' + action.name : '')), now);
       return { state: s, command: action, halt: false };
     }
     // Service existing positions before seeking new ones.
@@ -118,9 +123,9 @@
     if (open.length >= c.maxOpen) return done('Monitoring open trades; new entries paused');
     if (!c.targets.length) return done('Add a target or use AI Scout before starting');
     const target = c.targets[s.targetIndex % c.targets.length];
-    if (snap.page !== 'results' || snap.searchName !== target.name || (target.identity && !snap.rows.some(r => r.identity === target.identity))) return command('search', { target });
+    if (snap.page !== 'results' || !sameName(snap.searchName, target.name) || (target.identity && !snap.rows.some(r => r.identity === target.identity))) return command('search', { target });
     // A target may acquire its exact EA identity only when all four comparison rows agree.
-    const ids = [...new Set(snap.rows.filter(r => r.name === target.name && (!target.rating || r.rating === target.rating) && (!target.chem || r.chem === target.chem)).map(r => r.identity).filter(Boolean))];
+    const ids = [...new Set(snap.rows.filter(r => sameName(r.name, target.name) && (!target.rating || r.rating === target.rating) && (!target.chem || r.chem === target.chem)).map(r => r.identity).filter(Boolean))];
     if (ids.length !== 1) { s.targetIndex++; s.nextAt = now + Math.max(10, c.intervalSeconds) * 1000; return done('Exact card variant is ambiguous; skipping ' + target.name); }
     const exactTarget = Object.assign({}, target, { identity: target.identity || ids[0] });
     if (target.identity && target.identity !== ids[0]) return done('EA variant does not match configured target', true);
@@ -128,7 +133,7 @@
     if (!q) { s.targetIndex++; return command('search', { target: c.targets[s.targetIndex % c.targets.length] }); }
     const reserved = open.reduce((a, t) => a + (t.reserved || 0), 0);
     const available = Math.min(c.budget - s.sessionSpent - reserved, snap.coins || 0);
-    const candidates = snap.rows.filter(r => r.identity === exactTarget.identity && r.status === 'market' && r.auctionId && !s.ledger.some(t => t.auctionId === r.auctionId))
+    const candidates = snap.rows.filter(r => r.identity === exactTarget.identity && r.status === 'market' && r.auctionId && (c.dryRun || r.uiBound !== false) && !s.ledger.some(t => t.auctionId === r.auctionId))
       .map(r => ({ row: r, type: r.buyNow > 0 && r.buyNow <= q.max ? 'buy' : 'bid', amount: r.buyNow > 0 && r.buyNow <= q.max ? r.buyNow : nextBid(r) }))
       .filter(x => x.amount >= 150 && x.amount <= q.max && x.amount <= available && (x.type === 'buy' || (x.row.timeSeconds > 5 && x.row.timeSeconds <= 120)))
       .sort((a, b) => a.amount - b.amount);
@@ -136,10 +141,12 @@
       const x = candidates[0];
       return command(x.type, { auctionId: x.row.auctionId, identity: x.row.identity, name: x.row.name, amount: x.amount, maxBid: q.max, sellPrice: q.sell }, true);
     }
+    const reason = 'No qualifying entry · ' + exactTarget.name + ': market ' + q.sell + ' · max entry ' + q.max +
+      (c.dryRun ? ' · Dry Run' : ' · waiting for a uniquely bound EA row');
     s.targetIndex++;
-    return command('search', { target: c.targets[s.targetIndex % c.targets.length] });
+    return command('search', { target: c.targets[s.targetIndex % c.targets.length], note: reason });
   }
-  const api = { step, down, nextBid, net, fresh, ceiling, quote, decide };
+  const api = { step, down, nextBid, net, normalizedName, sameName, fresh, ceiling, quote, decide };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.FCTrader = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
