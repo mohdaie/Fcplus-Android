@@ -74,6 +74,9 @@ class MainActivity : ComponentActivity() {
                         },
                         onStop = {
                             stopService(Intent(this, TraderService::class.java))
+                        },
+                        onReload = {
+                            GeckoEngine.reloadEa(this)
                         }
                     )
                 }
@@ -89,7 +92,8 @@ private val GeminiGradient = Brush.linearGradient(
 @Composable
 private fun FcPlusApp(
     onStart: () -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
+    onReload: () -> Unit
 ) {
     val status by AppState.status.collectAsState()
     var tab by remember { mutableIntStateOf(0) }
@@ -140,6 +144,7 @@ private fun FcPlusApp(
                 status = status,
                 onStart = onStart,
                 onStop = onStop,
+                onReload = onReload,
                 onVersion = { showVersionDialog = true }
             )
         }
@@ -162,7 +167,7 @@ private fun FcPlusApp(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Version " + BuildConfig.VERSION_NAME, color = GeminiText)
                     Text("Build " + BuildConfig.VERSION_CODE)
-                    Text("Trader · Journal · AI Scout")
+                    Text("Trader · EA service adapter · AI Scout")
                 }
             },
             confirmButton = {
@@ -180,6 +185,7 @@ private fun Dashboard(
     status: FcStatus,
     onStart: () -> Unit,
     onStop: () -> Unit,
+    onReload: () -> Unit,
     onVersion: () -> Unit
 ) {
     Column(
@@ -225,6 +231,13 @@ private fun Dashboard(
                 onClick = onStop
             )
         }
+
+        SecondaryAction(
+            text = "RELOAD EA",
+            enabled = !status.running,
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onReload
+        )
 
         InfoCard(
             title = "EA session",
