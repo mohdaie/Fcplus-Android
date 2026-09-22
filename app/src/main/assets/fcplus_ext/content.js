@@ -1,10 +1,12 @@
 /* EA DOM adapter: unsupported or ambiguous markup stops execution, never guesses. */
 (function () {
   'use strict';
-  if (window.__fcplus041) return;
-  window.__fcplus041 = true;
+  if (window.__fcplus042) return;
+  window.__fcplus042 = true;
   const native = payload => browser.runtime.sendNativeMessage('fcplus_native', payload);
   const clean = s => String(s || '').replace(/\s+/g, ' ').trim();
+  const normalizedName = value => clean(value).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  const sameName = (a, b) => normalizedName(a) === normalizedName(b);
   const EA_OBSERVATION = 'FCPLUS_EA_OBSERVATION';
   let observed = null, observerReady = false;
 
@@ -145,7 +147,7 @@
   }
 
   function rowMatch(dom, source) {
-    if (source.name && dom.name && clean(source.name).toLowerCase() !== clean(dom.name).toLowerCase()) return false;
+    if (source.name && dom.name && !sameName(source.name, dom.name)) return false;
     if (source.rating && dom.rating && source.rating !== dom.rating) return false;
     if (source.buyNow && dom.buyNow !== source.buyNow) return false;
     if (source.startPrice && dom.startPrice !== source.startPrice) return false;
@@ -184,14 +186,14 @@
     const currentPage = page();
     const expectedKind = currentPage === 'results' ? 'market' : currentPage === 'targets' ? 'watchlist' : currentPage === 'list' ? 'transferlist' : '';
     if (observed && expectedKind && observed.kind === expectedKind && Date.now() - observed.capturedAt <= 10000) {
-      const rows = observed.rows.map(row => Object.assign({}, row, { auctionId: row.bound ? row.auctionId : '' }));
+      const rows = observed.rows.map(row => Object.assign({}, row, { uiBound: !!row.bound }));
       const bound = observed.rows.filter(row => row.bound && row.identity && row.auctionId).length;
       const searchName = expectedKind === 'market' && rows.length && rows.every(row => row.name === rows[0].name) ? rows[0].name : '';
       return {
         page: currentPage, searchName, rows, capturedAt: observed.capturedAt,
         coins: observed.coins || coin(text(document, '.view-navbar-currency-coins .value,.ut-coins .value,[data-coins-value]')),
         security: security(), loggedOut: all('button').some(e => /^(log in|sign in)$/i.test(clean(e.textContent))),
-        diagnostics: 'EA service adapter: ' + bound + '/' + rows.length + ' exact rows bound to visible auctions',
+        diagnostics: 'EA service adapter: ' + rows.length + ' exact source auctions · ' + bound + '/' + rows.length + ' UI-bound' + (bound < rows.length ? ' · Dry Run can evaluate; Live waits for unique binding' : ''),
         url: location.origin + location.pathname
       };
     }
@@ -231,7 +233,7 @@
     const input = field('Player Name'); setValue(input, target.name);
     const choice = await waitFor(() => {
       const choices = all('.ut-player-search-control li,.playerSearchResults li,[role="option"]')
-        .filter(e => text(e, '.name,.player-name') === target.name && (!target.rating || coin(text(e, '.rating')) === target.rating));
+        .filter(e => sameName(text(e, '.name,.player-name'), target.name) && (!target.rating || coin(text(e, '.rating')) === target.rating));
       return choices.length === 1 ? choices[0] : null;
     });
     choice.click();
