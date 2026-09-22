@@ -1,6 +1,13 @@
-# FC+ Android 0.4.1
+# FC+ Android 0.4.2
 
 Native Compose / GeckoView app with one shared authenticated mobile EA session.
+
+## v0.4.2 field fix
+
+- Manual player targets now match EA names case-insensitively and accent-insensitively, so `victor munoz` matches `Víctor Muñoz`.
+- Identical visible listings no longer make Dry Run appear dead. Exact read-only EA source auctions can be evaluated even when several identical rows cannot be uniquely UI-bound.
+- Live mode still requires a unique UI binding before a financial action can be emitted.
+- The Brain now shows immediate startup feedback, and unprofitable searches report the observed market price versus FC+'s calculated maximum entry.
 
 ## Implemented
 
@@ -23,7 +30,7 @@ Chem Flip currently trades cards **already carrying** the specified chemistry st
 
 ## Device check
 
-1. Install the debug APK from the successful workflow artifact; verify v0.4.1 / build 10.
+1. Install the debug APK from the successful workflow artifact; verify v0.4.2 / build 11.
 2. Open EA Login and sign in. The same page stays mounted when switching to Brain.
 3. Open Targets & settings. Add an exact player name, card rating and chemistry style, or configure AI Scout and research candidates.
 4. Start in Dry Run. Run a normal EA market search and check diagnostics. "EA service adapter: X/Y exact rows bound" confirms the read-only service observer is matching EA objects to the visible auctions. Any unbound or missing-ID row remains ineligible for live execution.
