@@ -161,7 +161,7 @@ private fun Dashboard(
         ) {
             Column {
                 Text("FC+ Market Brain", style = MaterialTheme.typography.headlineMedium)
-                Text("Native Android prototype")
+                Text("Running v${BuildConfig.VERSION_NAME} · build ${BuildConfig.VERSION_CODE}")
             }
             TextButton(onClick = onVersion) {
                 Text("v${BuildConfig.VERSION_NAME}")
