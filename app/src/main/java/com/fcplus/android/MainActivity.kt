@@ -1,7 +1,9 @@
 package com.fcplus.android
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -34,6 +36,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 
@@ -65,6 +68,16 @@ private fun FcPlusApp(
 ) {
     val status by AppState.status.collectAsState()
     var tab by remember { mutableIntStateOf(0) }
+    val context = LocalContext.current
+
+    LaunchedEffect(tab) {
+        val activity = context as? Activity ?: return@LaunchedEffect
+        activity.requestedOrientation = if (tab == 1) {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+    }
 
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -131,7 +144,7 @@ private fun Dashboard(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("FC+ Market Brain", style = MaterialTheme.typography.headlineMedium)
-        Text("Native Android prototype v0.1.0")
+        Text("Native Android prototype v0.1.1")
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
@@ -192,7 +205,7 @@ private fun Dashboard(
         }
 
         Text(
-            "First login to EA from the EA Login tab. FC+ then reuses the normal WebView session in the foreground service. v0.1 monitors the session and hard-stops on security challenges; trading execution is added after this shell is verified on your phone."
+            "First login to EA from the EA Login tab. FC+ automatically opens that tab in landscape because EA's embedded Web App can reject portrait WebView layouts. FC+ then reuses the normal WebView session in the foreground service. Dry Run remains the default."
         )
     }
 }
