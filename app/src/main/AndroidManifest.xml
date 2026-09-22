@@ -11,7 +11,7 @@
         android:name=".FcPlusApp"
         android:allowBackup="true"
         android:usesCleartextTraffic="false"
-        android:label="FC+ v0.2.1">
+        android:label="FC+ v0.3.0">
 
         <activity
             android:name=".MainActivity"

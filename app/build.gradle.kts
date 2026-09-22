@@ -12,11 +12,9 @@ android {
         applicationId = "com.fcplus.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.2.1"
+        versionCode = 8
+        versionName = "0.3.0"
 
-        // Target device is modern Samsung/Android arm64. Keeping one ABI avoids
-        // shipping Gecko native libraries for x86/x86_64/armeabi-v7a as well.
         ndk {
             abiFilters += "arm64-v8a"
         }

@@ -24,7 +24,7 @@ class TraderService : Service() {
     override fun onCreate() {
         super.onCreate()
         createChannel()
-        startForeground(NOTIFICATION_ID, buildNotification("Starting Firefox engine"))
+        startForeground(NOTIFICATION_ID, buildNotification("Starting Market Brain"))
 
         val powerManager = getSystemService(POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
@@ -39,7 +39,7 @@ class TraderService : Service() {
             it.copy(
                 running = true,
                 securityStop = false,
-                engineStatus = "Starting background Gecko session",
+                engineStatus = "Starting background Market Brain",
                 lastEvent = "Foreground service started"
             )
         }
@@ -54,42 +54,38 @@ class TraderService : Service() {
         session.contentDelegate = object : GeckoSession.ContentDelegate {
             override fun onTitleChange(session: GeckoSession, title: String?) {
                 AppState.update {
-                    it.copy(
-                        pageTitle = title.orEmpty(),
-                        engineStatus = "Background Gecko session active",
-                        lastEvent = "Background page title updated"
-                    )
+                    it.copy(pageTitle = title.orEmpty(), engineStatus = "Background EA session active")
                 }
             }
         }
 
         session.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onPageStart(session: GeckoSession, url: String) {
-                AppState.update {
-                    it.copy(
-                        pageUrl = url,
-                        engineStatus = "Background Gecko loading EA",
-                        lastEvent = "Background navigation started"
-                    )
-                }
+                AppState.update { it.copy(pageUrl = url, engineStatus = "Background EA loading") }
             }
 
             override fun onPageStop(session: GeckoSession, success: Boolean) {
                 AppState.update {
                     it.copy(
                         running = true,
-                        engineStatus = if (success) "Background EA session active · Gecko" else "Background EA load failed",
+                        engineStatus = if (success) "Background Market Brain active" else "Background EA load failed",
                         lastEvent = if (success) "Background EA page loaded" else "Background EA load failed"
                     )
                 }
                 updateNotification(
-                    if (success) "EA session active · Dry Run · Gecko" else "EA background load failed"
+                    if (success) {
+                        "Market Brain active · " + if (AppState.status.value.dryRun) "Dry Run" else "Live"
+                    } else {
+                        "EA background load failed"
+                    }
                 )
             }
         }
 
-        session.setActive(true)
-        session.loadUri(GeckoEngine.EA_URL)
+        FcExtensionBridge.wireSession(this, session) {
+            session.setActive(true)
+            session.loadUri(GeckoEngine.EA_URL)
+        }
     }
 
     private fun buildNotification(text: String): Notification {

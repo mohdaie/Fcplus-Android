@@ -1,0 +1,21 @@
+{
+  "manifest_version": 2,
+  "name": "FC+ Market Bridge",
+  "version": "0.3.0",
+  "description": "Read-only EA market telemetry bridge for FC+ Android.",
+  "browser_specific_settings": {
+    "gecko": { "id": "fcplus@marketbrain" }
+  },
+  "permissions": [
+    "nativeMessaging",
+    "nativeMessagingFromContent",
+    "geckoViewAddons"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://ea.com/*", "https://*.ea.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

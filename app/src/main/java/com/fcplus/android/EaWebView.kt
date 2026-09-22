@@ -17,8 +17,7 @@ fun EaWebView(modifier: Modifier = Modifier) {
                     AppState.update {
                         it.copy(
                             pageTitle = title.orEmpty(),
-                            engineStatus = "EA open in Firefox engine",
-                            lastEvent = "GeckoView title updated"
+                            engineStatus = "EA session active · GeckoView"
                         )
                     }
                 }
@@ -26,26 +25,19 @@ fun EaWebView(modifier: Modifier = Modifier) {
 
             progressDelegate = object : GeckoSession.ProgressDelegate {
                 override fun onPageStart(session: GeckoSession, url: String) {
-                    AppState.update {
-                        it.copy(
-                            pageUrl = url,
-                            engineStatus = "Loading EA in Firefox engine",
-                            lastEvent = "GeckoView loading"
-                        )
-                    }
+                    AppState.update { it.copy(pageUrl = url, engineStatus = "Loading EA") }
                 }
 
                 override fun onPageStop(session: GeckoSession, success: Boolean) {
                     AppState.update {
-                        it.copy(
-                            engineStatus = if (success) "EA session active · GeckoView" else "EA load failed",
-                            lastEvent = if (success) "EA page loaded in GeckoView" else "EA page load failed"
-                        )
+                        it.copy(engineStatus = if (success) "EA session active · Market bridge" else "EA load failed")
                     }
                 }
             }
 
-            loadUri(GeckoEngine.EA_URL)
+            FcExtensionBridge.wireSession(AppContextHolder.context, this) {
+                loadUri(GeckoEngine.EA_URL)
+            }
         }
     }
 
@@ -58,10 +50,6 @@ fun EaWebView(modifier: Modifier = Modifier) {
 
     AndroidView(
         modifier = modifier,
-        factory = { context ->
-            GeckoView(context).apply {
-                setSession(session)
-            }
-        }
+        factory = { context -> GeckoView(context).apply { setSession(session) } }
     )
 }
