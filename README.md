@@ -1,6 +1,12 @@
-# FC+ Android 0.4.2
+# FC+ Android 0.4.3
 
 Native Compose / GeckoView app with one shared authenticated mobile EA session.
+
+## v0.4.3 field fix
+
+- A quiet/hidden EA page no longer kills the Android trading session with a false "heartbeat lost" stop. Stale data simply pauses decisions until fresh EA data returns.
+- Dry Run can now analyze visible Transfer Market rows even when EA does not expose auction/card IDs in the DOM. These fallback IDs are synthetic and are never accepted for Live financial actions.
+- Brain explicitly reports when Dry Run can read the market but Live is waiting for verified EA auction IDs.
 
 ## v0.4.2 field fix
 
@@ -30,7 +36,7 @@ Chem Flip currently trades cards **already carrying** the specified chemistry st
 
 ## Device check
 
-1. Install the debug APK from the successful workflow artifact; verify v0.4.2 / build 11.
+1. Install the debug APK from the successful workflow artifact; verify v0.4.3 / build 12.
 2. Open EA Login and sign in. The same page stays mounted when switching to Brain.
 3. Open Targets & settings. Add an exact player name, card rating and chemistry style, or configure AI Scout and research candidates.
 4. Start in Dry Run. Run a normal EA market search and check diagnostics. "EA service adapter: X/Y exact rows bound" confirms the read-only service observer is matching EA objects to the visible auctions. Any unbound or missing-ID row remains ineligible for live execution.
