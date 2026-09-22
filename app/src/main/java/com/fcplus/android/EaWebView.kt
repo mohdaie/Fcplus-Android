@@ -1,29 +1,66 @@
 package com.fcplus.android
 
-import android.annotation.SuppressLint
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.GeckoView
 
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun EaWebView(modifier: Modifier = Modifier) {
+    val session = remember {
+        GeckoEngine.newEaSession(AppContextHolder.context).apply {
+            contentDelegate = object : GeckoSession.ContentDelegate {
+                override fun onTitleChange(session: GeckoSession, title: String?) {
+                    AppState.update {
+                        it.copy(
+                            pageTitle = title.orEmpty(),
+                            engineStatus = "EA open in Firefox engine",
+                            lastEvent = "GeckoView title updated"
+                        )
+                    }
+                }
+            }
+
+            progressDelegate = object : GeckoSession.ProgressDelegate {
+                override fun onPageStart(session: GeckoSession, url: String) {
+                    AppState.update {
+                        it.copy(
+                            pageUrl = url,
+                            engineStatus = "Loading EA in Firefox engine",
+                            lastEvent = "GeckoView loading"
+                        )
+                    }
+                }
+
+                override fun onPageStop(session: GeckoSession, success: Boolean) {
+                    AppState.update {
+                        it.copy(
+                            engineStatus = if (success) "EA session active · GeckoView" else "EA load failed",
+                            lastEvent = if (success) "EA page loaded in GeckoView" else "EA page load failed"
+                        )
+                    }
+                }
+            }
+
+            loadUri(GeckoEngine.EA_URL)
+        }
+    }
+
+    DisposableEffect(session) {
+        onDispose {
+            runCatching { session.setActive(false) }
+            runCatching { session.close() }
+        }
+    }
+
     AndroidView(
         modifier = modifier,
         factory = { context ->
-            WebView(context).apply {
-                WebViewTools.configure(this)
-                addJavascriptInterface(FcJsBridge(context, "visible-webview"), "FCPlusAndroid")
-                webViewClient = object : WebViewClient() {
-                    override fun onPageFinished(view: WebView, url: String) {
-                        super.onPageFinished(view, url)
-                        val script = WebViewTools.loadBridgeScript(context)
-                        view.evaluateJavascript(script, null)
-                    }
-                }
-                loadUrl(WebViewTools.EA_URL)
+            GeckoView(context).apply {
+                setSession(session)
             }
         }
     )

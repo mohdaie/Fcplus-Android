@@ -2,46 +2,40 @@
 
 Native Android shell for FC+ built with Kotlin + Jetpack Compose.
 
-## v0.1.0
+## v0.2.0
 
-The first milestone proves the Android architecture before live trading is enabled:
+This milestone changes the browser engine and redesigns the app:
 
-- Native Jetpack Compose dashboard
-- Embedded EA FC Web App login/session
-- Persistent WebView cookies
-- Android to JavaScript bridge
-- Foreground service
-- Background/headless WebView prototype
-- Persistent notification
-- Partial wake lock while the service is active
-- Dry Run enabled by default
-- Automatic hard-stop when common CAPTCHA/security/restriction text is detected
-- GitHub Actions APK build
+- Mozilla GeckoView replaces Android WebView for EA Login.
+- GeckoView uses the Firefox rendering engine family that already works with EA FC on the target phone.
+- No forced portrait or landscape orientation.
+- Visible EA session and background session use the same Gecko runtime.
+- New Gemini-inspired dark interface:
+  - deep navy surfaces
+  - blue / violet / pink gradient accents
+  - cleaner rounded cards
+  - system sans typography tuned to a Gemini-like visual hierarchy
+- Version popup and version chip remain visible.
+- Dry Run remains enabled by default.
+- GitHub Actions continues to build the APK automatically.
 
-## First test
+Note: Google Sans is not bundled. FC+ uses the Android system sans font with Gemini-style typography and spacing.
 
-1. Open the EA Login tab in FC+.
-2. Sign in to EA normally.
-3. Return to Dashboard.
-4. Leave Dry Run enabled.
-5. Tap START BACKGROUND.
-6. Lock the screen or switch apps for a few minutes.
-7. Reopen FC+ and confirm the EA session still reports as active.
+## Current test
 
-Android can still throttle a background WebView on some devices. This milestone measures that behavior on the target Samsung device before trading execution is moved into it.
-
-## Build
-
-Every push to main runs .github/workflows/android-build.yml.
-
-Open Actions -> Build Android APK, choose the newest successful run, and download the FCPlus-Android-debug artifact.
+1. Install v0.2.0.
+2. Confirm the startup popup says Version 0.2.0 / Build 6.
+3. Open EA Login.
+4. Sign in normally.
+5. Return to Market Brain.
+6. Keep Dry Run enabled.
+7. Start Background.
+8. Switch apps / lock the phone and verify the Gecko session remains alive.
 
 ## Next milestones
 
-- Inject the FC+ Quick Flip / Chem Flip engine
-- Native trade/job model
-- Market Brain candidate feed
+- WebExtension bridge for the existing FC+ JavaScript engine
+- Quick Flip + Chem Flip candidate model
 - FUT.GG / market-data integration
-- Trade history and realized profit
-- Supabase job queue
-- Optional remote trading worker for true unattended operation
+- Native trade history and realized profit
+- Supabase Market Brain jobs

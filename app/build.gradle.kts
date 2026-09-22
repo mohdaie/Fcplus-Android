@@ -12,8 +12,8 @@ android {
         applicationId = "com.fcplus.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.1.4"
+        versionCode = 6
+        versionName = "0.2.0"
     }
 
     compileOptions {
@@ -43,12 +43,13 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.webkit:webkit:1.12.1")
+
+    implementation("org.mozilla.geckoview:geckoview:155.0.20260903215306")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
-
 
 kotlin {
     jvmToolchain(17)

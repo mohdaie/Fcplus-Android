@@ -7,13 +7,10 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
 import android.os.PowerManager
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.core.app.NotificationCompat
+import org.mozilla.geckoview.GeckoSession
 
 class TraderService : Service() {
     companion object {
@@ -21,13 +18,13 @@ class TraderService : Service() {
         const val NOTIFICATION_ID = 2701
     }
 
-    private var engineWebView: WebView? = null
+    private var engineSession: GeckoSession? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
         createChannel()
-        startForeground(NOTIFICATION_ID, buildNotification("Starting FC+ engine"))
+        startForeground(NOTIFICATION_ID, buildNotification("Starting Firefox engine"))
 
         val powerManager = getSystemService(POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
@@ -42,35 +39,57 @@ class TraderService : Service() {
             it.copy(
                 running = true,
                 securityStop = false,
-                engineStatus = "Starting background EA session",
+                engineStatus = "Starting background Gecko session",
                 lastEvent = "Foreground service started"
             )
         }
 
-        Handler(Looper.getMainLooper()).post { startBackgroundWebView() }
+        startBackgroundSession()
     }
 
-    private fun startBackgroundWebView() {
-        val webView = WebView(this)
-        engineWebView = webView
-        WebViewTools.configure(webView)
-        webView.addJavascriptInterface(FcJsBridge(this, "background-engine"), "FCPlusAndroid")
-        webView.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView, url: String) {
-                super.onPageFinished(view, url)
-                val script = WebViewTools.loadBridgeScript(this@TraderService)
-                view.evaluateJavascript(script, null)
+    private fun startBackgroundSession() {
+        val session = GeckoEngine.newEaSession(this)
+        engineSession = session
+
+        session.contentDelegate = object : GeckoSession.ContentDelegate {
+            override fun onTitleChange(session: GeckoSession, title: String?) {
+                AppState.update {
+                    it.copy(
+                        pageTitle = title.orEmpty(),
+                        engineStatus = "Background Gecko session active",
+                        lastEvent = "Background page title updated"
+                    )
+                }
+            }
+        }
+
+        session.progressDelegate = object : GeckoSession.ProgressDelegate {
+            override fun onPageStart(session: GeckoSession, url: String) {
+                AppState.update {
+                    it.copy(
+                        pageUrl = url,
+                        engineStatus = "Background Gecko loading EA",
+                        lastEvent = "Background navigation started"
+                    )
+                }
+            }
+
+            override fun onPageStop(session: GeckoSession, success: Boolean) {
                 AppState.update {
                     it.copy(
                         running = true,
-                        engineStatus = "Background EA session loaded",
-                        lastEvent = "Engine page loaded"
+                        engineStatus = if (success) "Background EA session active · Gecko" else "Background EA load failed",
+                        lastEvent = if (success) "Background EA page loaded" else "Background EA load failed"
                     )
                 }
-                updateNotification("EA session active · Dry Run")
+                updateNotification(
+                    if (success) "EA session active · Dry Run · Gecko" else "EA background load failed"
+                )
             }
         }
-        webView.loadUrl(WebViewTools.EA_URL)
+
+        session.setActive(true)
+        session.loadUri(GeckoEngine.EA_URL)
     }
 
     private fun buildNotification(text: String): Notification {
@@ -84,7 +103,7 @@ class TraderService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle("FC+ Trader")
+            .setContentTitle("FC+ Market Brain")
             .setContentText(text)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -104,20 +123,19 @@ class TraderService : Service() {
                 "FC+ background trader",
                 NotificationManager.IMPORTANCE_LOW
             )
-            channel.description = "Keeps the FC+ trading coordinator active."
+            channel.description = "Keeps FC+ Market Brain active in the background."
             val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
         }
     }
 
     override fun onDestroy() {
-        Handler(Looper.getMainLooper()).post {
-            engineWebView?.stopLoading()
-            engineWebView?.removeJavascriptInterface("FCPlusAndroid")
-            engineWebView?.destroy()
-            engineWebView = null
-        }
+        runCatching { engineSession?.setActive(false) }
+        runCatching { engineSession?.close() }
+        engineSession = null
+
         if (wakeLock?.isHeld == true) wakeLock?.release()
+
         AppState.update {
             it.copy(
                 running = false,
