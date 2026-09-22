@@ -50,7 +50,7 @@
   }
   function decide(saved, snap, cfg, now) {
     const s = JSON.parse(JSON.stringify(saved || fresh(now)));
-    const c = Object.assign({ dryRun: true, minProfit: 300, minRoi: 8, maxBuy: 5000, budget: 20000, maxOpen: 3, durationMinutes: 20, intervalSeconds: 15, maxActions: 60, dailyCap: 100000, targets: [], runId: '' }, cfg);
+    const c = Object.assign({ dryRun: true, strategy: 'silver_quick_flip', minProfit: 200, minRoi: 8, maxBuy: 5000, budget: 20000, maxOpen: 3, durationMinutes: 20, intervalSeconds: 12, maxActions: 60, dailyCap: 100000, targets: [], runId: '' }, cfg);
     const done = (message, halt) => { if (message) s.message = message; return { state: s, command: null, halt: !!halt }; };
     if (![c.minProfit,c.minRoi,c.maxBuy,c.budget,c.maxOpen,c.durationMinutes,c.intervalSeconds,c.maxActions,c.dailyCap].every(Number.isFinite) || c.minProfit < 0 || c.minRoi < 0 || c.maxBuy < 150 || c.budget < 150 || c.maxOpen < 1 || c.durationMinutes < 1 || c.durationMinutes > 60 || c.maxActions < 1 || c.intervalSeconds < 10) return done('Invalid trading limits', true);
     if (s.schema !== 1) return done('Unsupported saved ledger. Trading stopped.', true);
@@ -121,8 +121,12 @@
     if (open.some(t => t.state !== 'listed') && now - (s.lastTargetsAt || 0) >= 30000) return command('navigate', { page: 'targets' });
     if (open.some(t => t.state === 'listed') && now - (s.lastListAt || 0) >= 30000) return command('navigate', { page: 'list' });
     if (open.length >= c.maxOpen) return done('Monitoring open trades; new entries paused');
-    if (!c.targets.length) return done('Add a target or use AI Scout before starting');
-    const target = c.targets[s.targetIndex % c.targets.length];
+    const dynamicTargets = c.targets.length ? c.targets : (snap.strategyTarget ? [snap.strategyTarget] : []);
+    if (!dynamicTargets.length) {
+      if (c.strategy === 'silver_quick_flip') return command('discover', { strategy: c.strategy, note: 'Scanning EA silver market for the best quick-flip candidate' });
+      return done('Choose a trading method before starting');
+    }
+    const target = dynamicTargets[s.targetIndex % dynamicTargets.length];
     if (snap.page !== 'results' || !sameName(snap.searchName, target.name) || (target.identity && !snap.rows.some(r => r.identity === target.identity))) return command('search', { target });
     // A target may acquire its exact EA identity only when all four comparison rows agree.
     const ids = [...new Set(snap.rows.filter(r => sameName(r.name, target.name) && (!target.rating || r.rating === target.rating) && (!target.chem || r.chem === target.chem)).map(r => r.identity).filter(Boolean))];
@@ -130,7 +134,11 @@
     const exactTarget = Object.assign({}, target, { identity: target.identity || ids[0] });
     if (target.identity && target.identity !== ids[0]) return done('EA variant does not match configured target', true);
     const q = quote(snap.rows, exactTarget, c);
-    if (!q) { s.targetIndex++; return command('search', { target: c.targets[s.targetIndex % c.targets.length] }); }
+    if (!q) {
+      s.targetIndex++;
+      if (c.targets.length) return command('search', { target: c.targets[s.targetIndex % c.targets.length] });
+      return command('discover', { strategy: c.strategy, note: 'Refreshing Silver Quick Flip candidates' });
+    }
     const reserved = open.reduce((a, t) => a + (t.reserved || 0), 0);
     const available = Math.min(c.budget - s.sessionSpent - reserved, snap.coins || 0);
     const candidates = snap.rows.filter(r => r.identity === exactTarget.identity && r.status === 'market' && r.auctionId && (c.dryRun || r.uiBound !== false) && !s.ledger.some(t => t.auctionId === r.auctionId))
@@ -144,7 +152,8 @@
     const reason = 'No qualifying entry · ' + exactTarget.name + ': market ' + q.sell + ' · max entry ' + q.max +
       (c.dryRun ? ' · Dry Run' : ' · waiting for a uniquely bound EA row');
     s.targetIndex++;
-    return command('search', { target: c.targets[s.targetIndex % c.targets.length], note: reason });
+    if (c.targets.length) return command('search', { target: c.targets[s.targetIndex % c.targets.length], note: reason });
+    return command('discover', { strategy: c.strategy, note: reason + ' · scanning another silver candidate' });
   }
   const api = { step, down, nextBid, net, normalizedName, sameName, fresh, ceiling, quote, decide };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
