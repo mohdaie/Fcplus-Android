@@ -1,9 +1,7 @@
 package com.fcplus.android
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -20,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
@@ -28,15 +27,16 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 
@@ -68,16 +68,7 @@ private fun FcPlusApp(
 ) {
     val status by AppState.status.collectAsState()
     var tab by remember { mutableIntStateOf(0) }
-    val context = LocalContext.current
-
-    LaunchedEffect(tab) {
-        val activity = context as? Activity ?: return@LaunchedEffect
-        activity.requestedOrientation = if (tab == 1) {
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        } else {
-            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        }
-    }
+    var showVersionDialog by remember { mutableStateOf(true) }
 
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -118,7 +109,8 @@ private fun FcPlusApp(
                 modifier = Modifier.padding(padding),
                 status = status,
                 onStart = onStart,
-                onStop = onStop
+                onStop = onStop,
+                onVersion = { showVersionDialog = true }
             )
             else -> EaWebView(
                 modifier = Modifier
@@ -127,6 +119,25 @@ private fun FcPlusApp(
             )
         }
     }
+
+    if (showVersionDialog) {
+        AlertDialog(
+            onDismissRequest = { showVersionDialog = false },
+            title = { Text("FC+ Android") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Version ${BuildConfig.VERSION_NAME}")
+                    Text("Build ${BuildConfig.VERSION_CODE}")
+                    Text("Native Kotlin + Jetpack Compose")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showVersionDialog = false }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -134,7 +145,8 @@ private fun Dashboard(
     modifier: Modifier,
     status: FcStatus,
     onStart: () -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
+    onVersion: () -> Unit
 ) {
     Column(
         modifier = modifier
@@ -143,8 +155,18 @@ private fun Dashboard(
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text("FC+ Market Brain", style = MaterialTheme.typography.headlineMedium)
-        Text("Native Android prototype v0.1.1")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column {
+                Text("FC+ Market Brain", style = MaterialTheme.typography.headlineMedium)
+                Text("Native Android prototype")
+            }
+            TextButton(onClick = onVersion) {
+                Text("v${BuildConfig.VERSION_NAME}")
+            }
+        }
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
@@ -205,7 +227,7 @@ private fun Dashboard(
         }
 
         Text(
-            "First login to EA from the EA Login tab. FC+ automatically opens that tab in landscape because EA's embedded Web App can reject portrait WebView layouts. FC+ then reuses the normal WebView session in the foreground service. Dry Run remains the default."
+            "EA Login now follows the phone's normal orientation. FC+ does not force portrait or landscape. Dry Run remains the default while we verify the background session."
         )
     }
 }
