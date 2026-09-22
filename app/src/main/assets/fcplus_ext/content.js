@@ -1,14 +1,16 @@
 /* EA DOM adapter: unsupported or ambiguous markup stops execution, never guesses. */
 (function () {
   'use strict';
-  if (window.__fcplus043) return;
-  window.__fcplus043 = true;
+  if (window.__fcplus050) return;
+  window.__fcplus050 = true;
   const native = payload => browser.runtime.sendNativeMessage('fcplus_native', payload);
   const clean = s => String(s || '').replace(/\s+/g, ' ').trim();
   const normalizedName = value => clean(value).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
   const sameName = (a, b) => normalizedName(a) === normalizedName(b);
   const EA_OBSERVATION = 'FCPLUS_EA_OBSERVATION';
-  let observed = null, observerReady = false;
+  const STRATEGY_REQUEST = 'FCPLUS_STRATEGY_REQUEST';
+  const STRATEGY_RESPONSE = 'FCPLUS_STRATEGY_RESPONSE';
+  let observed = null, observerReady = false, strategyTarget = null, strategyInfo = '', strategyRequestSeq = 0;
 
   function injectServiceObserver() {
     const attach = () => {
@@ -62,6 +64,25 @@
   });
 
   injectServiceObserver();
+
+  function strategyScan(strategy, params) {
+    return new Promise((resolve, reject) => {
+      const requestId = 'fcplus-strategy-' + Date.now() + '-' + (++strategyRequestSeq);
+      const timeout = setTimeout(() => {
+        window.removeEventListener('message', listener);
+        reject(new Error('Silver market scan timed out'));
+      }, 45000);
+      function listener(event) {
+        if (event.source !== window || event.data?.type !== STRATEGY_RESPONSE || event.data.requestId !== requestId) return;
+        clearTimeout(timeout);
+        window.removeEventListener('message', listener);
+        if (event.data.error) reject(new Error(clean(event.data.error))); else resolve(event.data.result || {});
+      }
+      window.addEventListener('message', listener);
+      window.postMessage({ type: STRATEGY_REQUEST, requestId, strategy, params: params || {} }, '*');
+    });
+  }
+
   const coin = s => { const v = clean(s); return /^\d[\d, ]*$/.test(v) ? Number(v.replace(/[, ]/g, '')) : 0; };
   const visible = e => e && e.getBoundingClientRect().width > 0 && e.getBoundingClientRect().height > 0 && getComputedStyle(e).visibility !== 'hidden' && getComputedStyle(e).display !== 'none';
   const all = (s, root = document) => Array.from(root.querySelectorAll(s)).filter(visible);
@@ -196,7 +217,8 @@
         page: currentPage, searchName, rows, capturedAt: observed.capturedAt,
         coins: observed.coins || coin(text(document, '.view-navbar-currency-coins .value,.ut-coins .value,[data-coins-value]')),
         security: security(), loggedOut: all('button').some(e => /^(log in|sign in)$/i.test(clean(e.textContent))),
-        diagnostics: 'EA service adapter: ' + rows.length + ' exact source auctions · ' + bound + '/' + rows.length + ' UI-bound' + (bound < rows.length ? ' · Dry Run can evaluate; Live waits for unique binding' : ''),
+        diagnostics: strategyInfo || ('EA service adapter: ' + rows.length + ' exact source auctions · ' + bound + '/' + rows.length + ' UI-bound' + (bound < rows.length ? ' · Dry Run can evaluate; Live waits for unique binding' : '')),
+        strategyTarget,
         url: location.origin + location.pathname
       };
     }
@@ -213,10 +235,11 @@
     const dryReadable = currentPage === 'results' && rows.filter(r => r.identity && r.auctionId && r.buyNow >= 150).length;
     return { page: currentPage, searchName, rows, capturedAt: Date.now(), coins: coin(text(document, '.view-navbar-currency-coins .value,.ut-coins .value,[data-coins-value]')),
       security: security(), loggedOut: all('button').some(e => /^(log in|sign in)$/i.test(clean(e.textContent))),
-      diagnostics: dryReadable ? 'Dry Run fallback: ' + dryReadable + ' market rows readable · Live waits for verified EA auction IDs' :
+      diagnostics: strategyInfo || (dryReadable ? 'Dry Run fallback: ' + dryReadable + ' market rows readable · Live waits for verified EA auction IDs' :
         missing ? missing + ' rows are visible but incomplete; waiting for readable market data.' :
         rows.length ? rows.length + ' identified EA rows' :
-        observerReady ? 'EA observer ready; open Transfer Market search results' : 'Open Transfer Market search results to feed Market Brain',
+        observerReady ? 'EA observer ready; FC+ can scan the market automatically' : 'EA market bridge is starting'),
+      strategyTarget,
       url: location.origin + location.pathname };
   }
   function findRow(action) {
@@ -265,6 +288,20 @@
     try {
       await permit(action);
       if (action.type === 'navigate') { await navigate(action.page); return; }
+      if (action.type === 'discover') {
+        strategyInfo = 'Scanning silver market…';
+        const found = await strategyScan(action.strategy, {
+          maxBuy: action.maxBuy || 5000,
+          minProfit: action.minProfit || 200,
+          minRoi: action.minRoi || 8
+        });
+        strategyTarget = found.target || null;
+        if (!strategyTarget) throw new Error('No Silver Quick Flip candidate found');
+        strategyInfo = 'Silver Quick Flip · ' + strategyTarget.name + ' ' + strategyTarget.rating +
+          ' · market ' + (found.marketSell || '?') + ' · max entry ' + (found.maxEntry || '?') +
+          (found.hasEntry ? ' · opportunity found' : ' · monitoring');
+        return;
+      }
       if (action.type === 'search') { await search(action.target); return; }
       const e = findRow(action), before = parseRow(e);
       if (action.type === 'buy' && (before.status !== 'market' || before.buyNow !== action.amount)) throw new Error('Buy price/status changed');
