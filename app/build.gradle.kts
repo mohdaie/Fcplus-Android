@@ -46,7 +46,7 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
 
-    implementation("org.mozilla.geckoview:geckoview:155.0.20260903215306")
+    implementation("org.mozilla.geckoview:geckoview:147.0.20260212191108")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
