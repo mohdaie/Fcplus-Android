@@ -98,3 +98,22 @@ test('reservations survive restart and reduce available budget',()=>{
   const s=initial();s.ledger=[{state:'bid',auctionId:'x',identity:'other',reserved:19500}];
   const d=decide(s);assert.notEqual(d.command?.type,'bid');
 });
+
+test('EA player matching ignores case and accents',()=>{
+  assert.equal(E.sameName('victor munoz','Víctor Muñoz'),true);
+  assert.equal(E.sameName('Víctor Muñoz','VICTOR   MUNOZ'),true);
+  assert.equal(E.sameName('Victor Munoz','Different Player'),false);
+});
+test('Dry Run can evaluate exact source auctions even when identical UI rows cannot be uniquely bound',()=>{
+  const accentedTarget={name:'victor munoz',rating:80,chem:'Basic'};
+  const rows=[row('a'),row('b'),row('c'),row('d')].map(r=>({...r,name:'Víctor Muñoz',uiBound:false}));
+  const sourceSnap={...snap(rows),searchName:'Víctor Muñoz'};
+  const dry=decide(initial(),sourceSnap,{...cfg,dryRun:true,targets:[accentedTarget]});
+  assert.equal(dry.command,null);
+  assert.equal(dry.state.pending,null);
+  assert.match(dry.state.message,/DRY RUN: would bid/);
+  const live=decide(initial(),sourceSnap,{...cfg,dryRun:false,targets:[accentedTarget]});
+  assert.equal(live.command.type,'search');
+  assert.equal(live.state.pending,null);
+  assert.match(live.state.message,/waiting for a uniquely bound EA row/);
+});
