@@ -22,10 +22,18 @@ class TraderService : Service() {
                 stopSelf(); return
             }
             val last = TradingStore.snapshot.optLong("capturedAt")
-            if (last > 0 && System.currentTimeMillis() - last > 30000) {
-                TradingStore.stop("EA heartbeat lost; trading stopped"); stopSelf(); return
+            val stale = last <= 0 || System.currentTimeMillis() - last > 30000
+            if (stale) {
+                AppState.update {
+                    it.copy(
+                        running = true,
+                        engineStatus = "Trader active · waiting for fresh EA data",
+                        lastEvent = "EA page is quiet; no trade action will run until fresh data arrives"
+                    )
+                }
             }
-            getSystemService(NotificationManager::class.java).notify(2701, notification(TradingStore.state.optString("message", "Waiting for EA")))
+            val message = if (stale) "Waiting for fresh EA data" else TradingStore.state.optString("message", "Monitoring EA")
+            getSystemService(NotificationManager::class.java).notify(2701, notification(message))
             handler.postDelayed(this, 5000)
         }
     }
