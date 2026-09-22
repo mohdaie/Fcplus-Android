@@ -7,7 +7,12 @@ import org.mozilla.geckoview.GeckoView
 
 @Composable
 fun EaWebView(modifier: Modifier = Modifier) {
-    AndroidView(modifier = modifier, factory = { context ->
-        GeckoView(context).apply { setSession(GeckoEngine.eaSession(context)) }
-    })
+    AndroidView(
+        modifier = modifier,
+        factory = { context -> GeckoView(context).apply { setSession(GeckoEngine.eaSession(context)) } },
+        onRelease = { view ->
+            view.releaseSession()
+            GeckoEngine.eaSession(AppContextHolder.context).setActive(TradingStore.running)
+        }
+    )
 }
