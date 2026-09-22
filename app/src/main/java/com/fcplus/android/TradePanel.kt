@@ -20,7 +20,6 @@ fun TradePanel() {
     val ledger = state.optJSONArray("ledger") ?: JSONArray()
     val context = AppContextHolder.context
 
-    var showAdvanced by remember { mutableStateOf(false) }
     var confirmLive by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf("") }
 
@@ -73,6 +72,30 @@ fun TradePanel() {
                 }
             }
 
+            val strategyTarget = TradingStore.snapshot.optJSONObject("strategyTarget")
+            Card(
+                colors = CardDefaults.cardColors(containerColor = GeminiSurface2),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("MARKET SCANNER", color = GeminiCyan, style = MaterialTheme.typography.labelLarge)
+                    if (strategyTarget != null) {
+                        Text(
+                            strategyTarget.optString("name") + " · " + strategyTarget.optInt("rating"),
+                            color = GeminiText,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text("FC+ selected this card from the current Silver Quick Flip scan.", color = GeminiMuted)
+                    } else {
+                        Text("No candidate selected yet", color = GeminiText)
+                        Text(
+                            if (running) "Scanning EA silver market in the background…" else "Start the trader and FC+ will scan automatically.",
+                            color = GeminiMuted
+                        )
+                    }
+                }
+            }
+
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Column(Modifier.weight(1f)) {
                     Text("Dry Run", color = GeminiText)
@@ -107,32 +130,28 @@ fun TradePanel() {
                 }
             }
 
-            TextButton(onClick = { showAdvanced = !showAdvanced }) {
-                Text(if (showAdvanced) "Hide advanced" else "Advanced")
-            }
+            HorizontalDivider()
+            Text("TRADING PARAMETERS", color = GeminiPurple, style = MaterialTheme.typography.labelLarge)
+            SettingNumber("Maximum per card", "maxBuy", 150, 100000, cfg, !running)
+            SettingNumber("Session spend budget", "budget", 150, 500000, cfg, !running)
+            SettingNumber("Minimum profit", "minProfit", 50, 100000, cfg, !running)
+            SettingNumber("Minimum ROI %", "minRoi", 1, 100, cfg, !running)
+            SettingNumber("Session minutes", "durationMinutes", 1, 60, cfg, !running)
+            SettingNumber("Seconds between actions", "intervalSeconds", 10, 120, cfg, !running)
+            SettingNumber("Maximum open trades", "maxOpen", 1, 10, cfg, !running)
+            SettingNumber("Maximum session actions", "maxActions", 1, 120, cfg, !running)
 
-            if (showAdvanced) {
-                SettingNumber("Maximum per card", "maxBuy", 150, 100000, cfg, !running)
-                SettingNumber("Session spend budget", "budget", 150, 500000, cfg, !running)
-                SettingNumber("Minimum profit", "minProfit", 50, 100000, cfg, !running)
-                SettingNumber("Minimum ROI %", "minRoi", 1, 100, cfg, !running)
-                SettingNumber("Session minutes", "durationMinutes", 1, 60, cfg, !running)
-                SettingNumber("Seconds between actions", "intervalSeconds", 10, 120, cfg, !running)
-                SettingNumber("Maximum open trades", "maxOpen", 1, 10, cfg, !running)
-                SettingNumber("Maximum session actions", "maxActions", 1, 120, cfg, !running)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(enabled = !running, onClick = {
+                    TradingStore.reconcileRequested = true
+                    info = "Reconcile requested."
+                }) { Text("Reconcile") }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(enabled = !running, onClick = {
-                        TradingStore.reconcileRequested = true
-                        info = "Reconcile requested."
-                    }) { Text("Reconcile") }
-
-                    TextButton(onClick = {
-                        (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                            .setPrimaryClip(ClipData.newPlainText("FC+ diagnostics", TradingStore.diagnostic()))
-                        info = "Diagnostics copied."
-                    }) { Text("Copy diagnostics") }
-                }
+                TextButton(onClick = {
+                    (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                        .setPrimaryClip(ClipData.newPlainText("FC+ diagnostics", TradingStore.diagnostic()))
+                    info = "Diagnostics copied."
+                }) { Text("Copy diagnostics") }
             }
 
             if (info.isNotBlank()) Text(info, color = GeminiCyan)
