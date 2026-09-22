@@ -227,7 +227,7 @@ private fun Dashboard(
         }
 
         Text(
-            "EA Login now follows the phone's normal orientation. FC+ does not force portrait or landscape. Dry Run remains the default while we verify the background session."
+            "EA Login follows the phone's normal orientation. FC+ does not force portrait or landscape. The embedded browser uses a desktop-compatible EA viewport to avoid EA's false Rotate Device gate."
         )
     }
 }
