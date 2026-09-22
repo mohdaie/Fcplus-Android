@@ -1,203 +1,198 @@
+/* EA DOM adapter: unsupported or ambiguous markup stops execution, never guesses. */
 (function () {
-  if (window.__fcplusMarketBridge030) return;
-  window.__fcplusMarketBridge030 = true;
-
-  var NATIVE_APP = 'fcplus_native';
-  var lastSecurityReason = '';
-
-  function clean(value) {
-    return String(value || '').replace(/\s+/g, ' ').trim();
+  'use strict';
+  if (window.__fcplus040) return;
+  window.__fcplus040 = true;
+  const native = payload => browser.runtime.sendNativeMessage('fcplus_native', payload);
+  const clean = s => String(s || '').replace(/\s+/g, ' ').trim();
+  const coin = s => { const v = clean(s); return /^\d[\d, ]*$/.test(v) ? Number(v.replace(/[, ]/g, '')) : 0; };
+  const visible = e => e && e.getBoundingClientRect().width > 0 && e.getBoundingClientRect().height > 0 && getComputedStyle(e).visibility !== 'hidden' && getComputedStyle(e).display !== 'none';
+  const all = (s, root = document) => Array.from(root.querySelectorAll(s)).filter(visible);
+  const text = (root, s) => clean(root.querySelector(s)?.textContent);
+  const attr = (e, names) => { for (const n of names) { const v = e.getAttribute(n) || e.querySelector('[' + n + ']')?.getAttribute(n); if (v) return clean(v); } return ''; };
+  let busy = false, lastSnap, lastError = '';
+  function only(list, description) { if (list.length !== 1) throw new Error('Cannot uniquely identify ' + description + ' (' + list.length + ')'); return list[0]; }
+  function button(label, root = document) { return only(all('button,[role="button"]', root).filter(e => clean(e.textContent).toLowerCase() === label.toLowerCase() && !e.disabled), label); }
+  function field(label, root = document) {
+    const direct = all('input', root).filter(e => clean(e.getAttribute('aria-label') || e.placeholder).toLowerCase() === label.toLowerCase());
+    if (direct.length === 1) return direct[0];
+    const labels = all('label', root).filter(e => clean(e.textContent).replace(/:$/, '').toLowerCase() === label.toLowerCase());
+    const inputs = labels.map(l => l.control || l.parentElement.querySelector('input')).filter(Boolean);
+    return only(inputs, label + ' input');
   }
-
-  function lower(value) {
-    return clean(value).toLowerCase();
+  function setValue(input, value) {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(input, String(value)); input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (input.value !== String(value)) throw new Error('EA rejected input value');
   }
-
-  function coin(value) {
-    return Number(String(value || '').replace(/[^\d]/g, '')) || 0;
+  async function waitFor(fn, ms = 5000) {
+    const end = Date.now() + ms;
+    while (Date.now() < end) { try { const x = fn(); if (x) return x; } catch (_) {} await new Promise(r => setTimeout(r, 200)); }
+    throw new Error('EA screen did not reach the expected state');
   }
-
-  function visible(el) {
-    if (!el || !el.getBoundingClientRect) return false;
-    var r = el.getBoundingClientRect();
-    var s = getComputedStyle(el);
-    return r.width > 4 && r.height > 4 &&
-      s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
+  function security() {
+    const t = clean(document.body?.innerText).toLowerCase();
+    return ['captcha','too many actions','temporarily unavailable','try again later','access has been restricted','verify your identity','security verification','soft ban'].find(x => t.includes(x)) || '';
   }
-
-  function pageType() {
-    var t = lower(document.body ? document.body.innerText : '');
-    if (t.indexOf('list on transfer market') >= 0 &&
-        t.indexOf('start price') >= 0 &&
-        t.indexOf('buy now price') >= 0) return 'sell';
-    if (t.indexOf("congratulations, you've won this item for") >= 0) return 'won';
-    if (t.indexOf('search results') >= 0) return 'results';
-    if (t.indexOf('item details') >= 0) return 'details';
-    if (t.indexOf('player details') >= 0) return 'playerdetails';
-    if (t.indexOf('transfer market') >= 0) return 'market';
-    if (t.indexOf('home') >= 0) return 'home';
+  function status(e) {
+    const declared = attr(e, ['data-trade-status', 'data-auction-state']);
+    if (['market','highest','outbid','won','lost','listed','sold','expired'].includes(declared)) return declared;
+    const classes = [e, ...e.querySelectorAll('[class]')].map(x => String(x.className)).join(' ').toLowerCase();
+    if (/\b(sold)\b/.test(classes)) return 'sold';
+    if (/\b(outbid)\b/.test(classes)) return 'outbid';
+    if (/\b(highest-bid|highestbid|winning)\b/.test(classes)) return 'highest';
+    if (/\b(won)\b/.test(classes)) return 'won';
+    if (/\b(lost)\b/.test(classes)) return 'lost';
+    if (/\b(expired)\b/.test(classes)) return 'expired';
+    if (/\b(listed|selling)\b/.test(classes)) return 'listed';
+    return page() === 'results' ? 'market' : 'unknown';
+  }
+  function page() {
+    const heads = all('h1,h2,h3,.ut-navigation-bar-view .title,.ut-navigation-bar-view .text').map(e => clean(e.textContent).toLowerCase());
+    if (heads.includes('transfer targets')) return 'targets';
+    if (heads.includes('transfer list')) return 'list';
+    if (heads.includes('search results')) return 'results';
+    if (heads.includes('transfer market')) return 'market';
+    if (heads.includes('home')) return 'home';
     return 'other';
   }
-
-  function timeSeconds(raw) {
-    var s = lower(raw), m;
-    m = s.match(/(\d+)\s*seconds?/); if (m) return Number(m[1]);
-    m = s.match(/(\d+)\s*minutes?/); if (m) return Number(m[1]) * 60;
-    m = s.match(/(\d+)\s*hours?/); if (m) return Number(m[1]) * 3600;
-    if (s.indexOf('<5 seconds') >= 0) return 4;
-    return 999999;
+  function numeric(e, selector, regex) {
+    const v = text(e, selector); if (v) return coin(v);
+    const m = clean(e.innerText).match(regex); return m ? coin(m[1]) : 0;
   }
-
-  function parseListing(raw) {
-    var s = clean(raw);
-    var start = s.match(/Start Price:\s*([\d,]+)/i);
-    var bid = s.match(/Bid\s*([\d,]+|---)/i);
-    var bin = s.match(/Buy Now:\s*([\d,]+)/i);
-    var tm = s.match(/Time\s*([^]+)$/i);
-    var name = s.split(/Start Price:/i)[0].trim()
-      .replace(/^\d+\s*[A-Z]{1,5}\s*/i, '').trim() || 'Item';
-
+  function parseRow(e) {
+    const name = text(e, '.name,.player-name,[data-player-name]') || attr(e, ['data-player-name']);
+    const resource = attr(e, ['data-resource-id','data-definition-id']);
+    const chem = attr(e, ['data-chemistry-style']) || text(e, '.chemistryStyle,.chem-style');
+    const rating = coin(text(e, '.rating,[data-rating]') || attr(e, ['data-rating']));
+    const t = clean(e.innerText), time = t.match(/(?:Time(?: Remaining)?\s*:?\s*)(<?\d+)\s*(seconds?|minutes?|hours?)/i);
     return {
-      name: name,
-      startPrice: start ? coin(start[1]) : 0,
-      currentBid: bid && bid[1] !== '---' ? coin(bid[1]) : 0,
-      buyNow: bin ? coin(bin[1]) : 0,
-      timeSeconds: tm ? timeSeconds(tm[1]) : 999999
+      auctionId: attr(e, ['data-trade-id','data-auction-id']), itemId: attr(e, ['data-item-id']),
+      identity: resource && name && rating && chem ? resource + ':' + chem : '', name, rating, chem: chem || 'Basic',
+      startPrice: numeric(e, '.startPrice .value,[data-start-price-value]', /Start Price\s*:?\s*([\d,]+)/i),
+      currentBid: numeric(e, '.currentBid .value,[data-current-bid-value]', /(?:Current )?Bid\s*:?\s*([\d,]+)/i),
+      buyNow: numeric(e, '.buyNowPrice .value,[data-buy-now-value]', /Buy Now(?: Price)?\s*:?\s*([\d,]+)/i),
+      paid: numeric(e, '[data-paid-value],.purchasePrice .value', /(?:Purchased For|Bought For|Winning Bid)\s*:?\s*([\d,]+)/i),
+      salePrice: numeric(e, '[data-sale-price-value],.soldPrice .value', /(?:Sold For|Sold Price)\s*:?\s*([\d,]+)/i),
+      timeSeconds: time ? Number(time[1].replace('<','')) * (/hour/i.test(time[2]) ? 3600 : /minute/i.test(time[2]) ? 60 : 1) : 999999,
+      status: status(e)
     };
   }
-
-  function listingCards() {
-    var found = [], seen = {};
-    var nodes = document.querySelectorAll('li,article,section,div');
-
-    for (var i = 0; i < nodes.length; i++) {
-      var el = nodes[i];
-      if (!visible(el)) continue;
-      var t = clean(el.innerText || '');
-      if (!/Start Price:/i.test(t) || !/Buy Now:/i.test(t) || !/\bTime\b/i.test(t)) continue;
-
-      var r = el.getBoundingClientRect();
-      if (r.width < 180 || r.height < 60 || r.height > 300) continue;
-
-      var p = parseListing(t);
-      if (!p.buyNow) continue;
-
-      var key = Math.round(r.top / 10) + ':' + p.buyNow + ':' + p.startPrice + ':' + p.currentBid;
-      if (seen[key]) continue;
-      seen[key] = true;
-
-      p.top = r.top;
-      p.area = r.width * r.height;
-      found.push(p);
+  function rowElements() {
+    const nodes = all('.listFUTItem,li[data-trade-id],li[data-auction-id],[data-fcplus-auction]');
+    return nodes.filter(e => !nodes.some(other => other !== e && other.contains(e)));
+  }
+  function snapshot() {
+    const rows = rowElements().map(parseRow);
+    const searchName = rows.length && rows.every(r => r.name === rows[0].name) ? rows[0].name : '';
+    const missing = rows.length ? rows.filter(r => !r.identity || !r.auctionId).length : 0;
+    return { page: page(), searchName, rows, capturedAt: Date.now(), coins: coin(text(document, '.view-navbar-currency-coins .value,.ut-coins .value,[data-coins-value]')),
+      security: security(), loggedOut: all('button').some(e => /^(log in|sign in)$/i.test(clean(e.textContent))),
+      diagnostics: missing ? missing + ' rows lack verified auction/card IDs; live orders blocked.' : rows.length ? rows.length + ' identified EA rows' : 'No supported auction rows on this screen',
+      url: location.origin + location.pathname };
+  }
+  function findRow(action) {
+    return only(rowElements().filter(e => { const r = parseRow(e); return r.identity === action.identity && (action.itemId ? r.itemId === action.itemId : r.auctionId === action.auctionId); }), 'exact auction');
+  }
+  async function permit(action) {
+    if (security()) throw new Error('EA verification required');
+    const response = await native({ type: 'permit', id: action.id, runId: action.id.split(':')[0] });
+    if (!response?.allowed) throw new Error('Session stopped or permission expired');
+  }
+  async function navigate(destination) {
+    if (page() === destination) return;
+    const labels = { market: 'Transfer Market', targets: 'Transfer Targets', list: 'Transfer List' };
+    try { button(labels[destination]).click(); } catch (_) {
+      // One explicit navigation step per tick; do not click generic back/confirmation buttons.
+      button('Transfers').click();
+      (await waitFor(() => button(labels[destination]))).click();
     }
-
-    found.sort(function (a, b) { return a.area - b.area; });
-    var out = [];
-
-    found.forEach(function (item) {
-      var duplicate = out.some(function (x) {
-        return Math.abs(x.top - item.top) < 30 &&
-          x.buyNow === item.buyNow &&
-          x.startPrice === item.startPrice;
-      });
-      if (!duplicate) {
-        delete item.top;
-        delete item.area;
-        out.push(item);
-      }
+    await waitFor(() => page() === destination);
+  }
+  async function search(target) {
+    if (page() === 'results') button('Back').click();
+    if (page() !== 'market') await navigate('market');
+    // Clear prior filters so old price/quality filters cannot bias a valuation.
+    button('Reset').click();
+    const input = field('Player Name'); setValue(input, target.name);
+    const choice = await waitFor(() => {
+      const choices = all('.ut-player-search-control li,.playerSearchResults li,[role="option"]')
+        .filter(e => text(e, '.name,.player-name') === target.name && (!target.rating || coin(text(e, '.rating')) === target.rating));
+      return choices.length === 1 ? choices[0] : null;
     });
-
-    return out.slice(0, 30);
-  }
-
-  function detectPlayerName() {
-    var type = pageType();
-    if (type !== 'results' && type !== 'details' && type !== 'playerdetails') return '';
-
-    var headings = Array.from(document.querySelectorAll('h1,h2,h3,.name,.player-name')).filter(visible);
-    for (var i = 0; i < headings.length; i++) {
-      var t = clean(headings[i].textContent || '');
-      if (!t) continue;
-      if (/Search Results|Item Details|Player Details|Transfer Market/i.test(t)) continue;
-      if (t.length >= 2 && t.length <= 45) return t;
+    choice.click();
+    if (target.chem && target.chem !== 'Basic') {
+      button('Chemistry Style').click();
+      button(target.chem).click();
     }
-
-    var rows = listingCards();
-    return rows.length ? rows[0].name : '';
+    button('Search').click();
+    await waitFor(() => page() === 'results');
   }
-
-  function detectChemStyle() {
-    var t = clean(document.body ? document.body.innerText : '');
-    var styles = [
-      'Hunter','Shadow','Hawk','Anchor','Engine','Catalyst','Finisher',
-      'Deadeye','Marksman','Sniper','Artist','Architect','Powerhouse',
-      'Maestro','Sentinel','Guardian','Gladiator','Backbone'
-    ];
-
-    for (var i = 0; i < styles.length; i++) {
-      var rx = new RegExp('(?:Chemistry Style|Chem Style)\\s*:?\\s*' + styles[i], 'i');
-      if (rx.test(t)) return styles[i];
-    }
-    return '';
-  }
-
-  function securityReason() {
-    var t = lower(document.body ? document.body.innerText : '');
-    var flags = [
-      'captcha',
-      'too many actions',
-      'temporarily unavailable',
-      'try again later',
-      'access has been restricted',
-      'verify your identity',
-      'security verification'
-    ];
-
-    for (var i = 0; i < flags.length; i++) {
-      if (t.indexOf(flags[i]) >= 0) return flags[i];
-    }
-    return '';
-  }
-
-  function send(payload) {
+  async function execute(action) {
+    let submitted = false;
     try {
-      var result = browser.runtime.sendNativeMessage(NATIVE_APP, payload);
-      if (result && typeof result.catch === 'function') result.catch(function () {});
-    } catch (_) {}
-  }
-
-  function scan() {
-    var reason = securityReason();
-    if (reason && reason !== lastSecurityReason) {
-      lastSecurityReason = reason;
-      send({ type: 'security_stop', reason: reason });
-      return;
+      await permit(action);
+      if (action.type === 'navigate') { await navigate(action.page); return; }
+      if (action.type === 'search') { await search(action.target); return; }
+      const e = findRow(action), before = parseRow(e);
+      if (action.type === 'buy' && (before.status !== 'market' || before.buyNow !== action.amount)) throw new Error('Buy price/status changed');
+      if (action.type === 'bid' && (!['market','outbid'].includes(before.status) || FCTrader.nextBid(before) !== action.amount)) throw new Error('Bid price/status changed');
+      if (action.type === 'list' && !['won','expired'].includes(before.status)) throw new Error('Item is not available to list');
+      e.click();
+      if (action.type === 'list') {
+        (await waitFor(() => button('List on Transfer Market'))).click();
+        const dialog = await waitFor(() => only(all('.ut-sell-item-view,[role="dialog"]'), 'listing form'));
+        setValue(field('Start Price', dialog), action.startPrice);
+        setValue(field('Buy Now Price', dialog), action.amount);
+        // Require an explicit 1 hour selection; never reuse a stale duration.
+        const duration = all('select', dialog).find(x => Array.from(x.options).some(o => /1 Hour/i.test(o.text)));
+        if (!duration) throw new Error('Cannot verify listing duration');
+        const option = Array.from(duration.options).find(o => /^1 Hour$/i.test(clean(o.text)));
+        if (!option) throw new Error('1 hour duration unavailable');
+        duration.value = option.value; duration.dispatchEvent(new Event('change', { bubbles: true }));
+        await permit(action); submitted = true; button('List on Transfer Market', dialog).click();
+      } else {
+        const label = action.type === 'buy' ? 'Buy Now' : 'Make Bid';
+        if (action.type === 'bid') setValue(await waitFor(() => field('Bid')), action.amount);
+        const orderButton = await waitFor(() => button(label));
+        // Recheck identity and price immediately before sending an order.
+        const latest = parseRow(findRow(action));
+        if ((action.type === 'buy' ? latest.buyNow : FCTrader.nextBid(latest)) !== action.amount) throw new Error('Auction changed before submit');
+        await permit(action); submitted = true; orderButton.click();
+        // A dialog is optional. Confirm only an explicit buy/bid dialog containing the exact amount.
+        await new Promise(r => setTimeout(r, 350));
+        const dialogs = all('[role="dialog"],.ut-dialog-view');
+        if (dialogs.length) {
+          const dialog = only(dialogs, 'order confirmation'), t = clean(dialog.innerText);
+          if (!/buy|purchase|bid/i.test(t) || !new RegExp('(?:^|[^0-9])' + String(action.amount).split('').join(',?') + '(?:[^0-9]|$)').test(t)) throw new Error('Unrecognized order confirmation');
+          await permit(action); button('Yes', dialog).click();
+        }
+      }
+      await native({ type: 'action_result', id: action.id, submitted: true, error: '' });
+    } catch (error) {
+      const message = clean(error.message).slice(0, 180); lastError = message;
+      await native({ type: 'action_result', id: action.id, submitted, error: message });
     }
-
-    send({
-      type: 'snapshot',
-      pageType: pageType(),
-      playerName: detectPlayerName(),
-      chemStyle: detectChemStyle(),
-      listings: listingCards(),
-      capturedAt: Date.now(),
-      url: location.href
-    });
   }
-
-  var timer;
-  function schedule() {
-    clearTimeout(timer);
-    timer = setTimeout(scan, 350);
+  async function tick() {
+    if (busy) return; busy = true;
+    try {
+      lastSnap = snapshot();
+      const reply = await native({ type: 'tick', snapshot: lastSnap });
+      if (reply?.reconcile && reply.state) {
+        const cfg = Object.assign({}, reply.config, { runId: reply.state.runId, dryRun: true, targets: [] });
+        const observed = FCTrader.decide(reply.state, lastSnap, cfg, Date.now());
+        await native({ type: 'reconcile', state: observed.state });
+      }
+      if (!reply?.running) return;
+      const decision = FCTrader.decide(reply.state, lastSnap, reply.config, Date.now());
+      const ack = await native({ type: 'checkpoint', state: decision.state, runId: reply.config.runId, halt: decision.halt, command: decision.command });
+      if (ack?.allowed && decision.command) await execute(decision.command);
+    } catch (error) {
+      lastError = clean(error.message).slice(0,180);
+      try { await native({ type: 'adapter_error', error: lastError }); } catch (_) {}
+    } finally { busy = false; }
   }
-
-  var observer = new MutationObserver(schedule);
-  observer.observe(document.documentElement, {
-    subtree: true,
-    childList: true,
-    characterData: true
-  });
-
-  scan();
-  setInterval(scan, 2500);
+  setInterval(tick, 2500);
+  tick();
 })();

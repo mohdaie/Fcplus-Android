@@ -24,6 +24,24 @@ object GeckoEngine {
         }
     }
 
+    private var sharedSession: GeckoSession? = null
+
+    fun eaSession(context: Context): GeckoSession {
+        sharedSession?.let { return it }
+        val session = newEaSession(context)
+        sharedSession = session
+        session.contentDelegate = object : GeckoSession.ContentDelegate {
+            override fun onTitleChange(session: GeckoSession, title: String?) {
+                AppState.update { it.copy(pageTitle = title.orEmpty()) }
+            }
+        }
+        FcExtensionBridge.wireSession(context, session) {
+            session.setActive(true)
+            session.loadUri(EA_URL)
+        }
+        return session
+    }
+
     fun newEaSession(context: Context): GeckoSession {
         val settings = GeckoSessionSettings.Builder()
             .allowJavascript(true)

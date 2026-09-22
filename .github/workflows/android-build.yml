@@ -1,13 +1,16 @@
 name: Build Android APK
 
 concurrency:
-  group: fcplus-android-main
+  group: fcplus-android-${{ github.ref }}
   cancel-in-progress: true
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, codex/fcplus-trader-v040 ]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -34,6 +37,11 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.11.1"
+
+      - name: Verify trading state machine
+        run: |
+          node --check app/src/main/assets/fcplus_ext/content.js
+          node --test tests/*.test.cjs
 
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug

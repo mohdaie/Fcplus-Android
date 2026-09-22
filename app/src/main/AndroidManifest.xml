@@ -9,9 +9,9 @@
 
     <application
         android:name=".FcPlusApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:usesCleartextTraffic="false"
-        android:label="FC+ v0.3.0">
+        android:label="FC+ v0.4.0">
 
         <activity
             android:name=".MainActivity"
