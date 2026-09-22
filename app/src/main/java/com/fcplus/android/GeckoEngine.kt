@@ -27,8 +27,8 @@ object GeckoEngine {
     fun newEaSession(context: Context): GeckoSession {
         val settings = GeckoSessionSettings.Builder()
             .allowJavascript(true)
-            .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_DESKTOP)
-            .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_DESKTOP)
+            .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_MOBILE)
+            .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
             .suspendMediaWhenInactive(false)
             .build()
 
