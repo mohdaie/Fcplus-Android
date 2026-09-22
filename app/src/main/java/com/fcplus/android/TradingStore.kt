@@ -52,7 +52,18 @@ object TradingStore {
         if ((settings.optJSONArray("targets")?.length() ?: 0) == 0 && (state.optJSONArray("ledger")?.length() ?: 0) == 0) return "Add a target or run AI Scout first"
         runId = UUID.randomUUID().toString()
         deadline = System.currentTimeMillis() + settings.optInt("durationMinutes", 20).coerceIn(1,60) * 60000L
-        running = true; allowedAction = ""; changed()
+        running = true
+        allowedAction = ""
+        val mode = if (settings.optBoolean("dryRun", true)) "Dry Run" else "Live"
+        state = JSONObject(state.toString()).put("message", "Starting $mode · waiting for fresh EA market data")
+        AppState.update {
+            it.copy(
+                running = true,
+                engineStatus = "Starting trader · $mode",
+                lastEvent = "Waiting for EA market data"
+            )
+        }
+        changed()
         return null
     }
     fun stop(reason: String) {
