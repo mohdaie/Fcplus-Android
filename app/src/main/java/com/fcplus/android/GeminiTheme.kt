@@ -10,16 +10,16 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-val GeminiInk = Color(0xFF080B14)
-val GeminiSurface = Color(0xFF111626)
-val GeminiSurface2 = Color(0xFF171D31)
-val GeminiStroke = Color(0xFF29304A)
-val GeminiText = Color(0xFFF5F7FF)
-val GeminiMuted = Color(0xFFAAB2CE)
-val GeminiBlue = Color(0xFF4C8DFF)
-val GeminiCyan = Color(0xFF78E3FF)
-val GeminiPurple = Color(0xFF8B6CFF)
-val GeminiPink = Color(0xFFD76DFF)
+val GeminiInk = Color(0xFF0B0F14)
+val GeminiSurface = Color(0xFF111820)
+val GeminiSurface2 = Color(0xFF19222D)
+val GeminiStroke = Color(0xFF2B3745)
+val GeminiText = Color(0xFFEAF0F8)
+val GeminiMuted = Color(0xFF9AA7B7)
+val GeminiBlue = Color(0xFF4C8DF6)
+val GeminiCyan = Color(0xFF7FCFFF)
+val GeminiPurple = Color(0xFF9B72F2)
+val GeminiPink = Color(0xFFD783E8)
 val GeminiGreen = Color(0xFF61DDAA)
 val GeminiRed = Color(0xFFFF6B7D)
 
