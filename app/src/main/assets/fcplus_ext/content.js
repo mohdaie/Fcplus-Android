@@ -1,8 +1,8 @@
 /* EA DOM adapter: unsupported or ambiguous markup stops execution, never guesses. */
 (function () {
   'use strict';
-  if (window.__fcplus042) return;
-  window.__fcplus042 = true;
+  if (window.__fcplus043) return;
+  window.__fcplus043 = true;
   const native = payload => browser.runtime.sendNativeMessage('fcplus_native', payload);
   const clean = s => String(s || '').replace(/\s+/g, ' ').trim();
   const normalizedName = value => clean(value).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -125,8 +125,11 @@
     const name = attr(e, ['data-fcplus-name']) || text(e, '.name,.player-name,[data-player-name]') || attr(e, ['data-player-name']);
     const resource = attr(e, ['data-resource-id','data-definition-id']);
     const chem = attr(e, ['data-fcplus-chem','data-chemistry-style']) || text(e, '.chemistryStyle,.chem-style');
-    const rating = coin(attr(e, ['data-fcplus-rating']) || text(e, '.rating,[data-rating]') || attr(e, ['data-rating']));
-    const t = clean(e.innerText), time = t.match(/(?:Time(?: Remaining)?\s*:?\s*)(<?\d+)\s*(seconds?|minutes?|hours?)/i);
+    const t = clean(e.innerText);
+    const ratingText = attr(e, ['data-fcplus-rating']) || text(e, '.rating,[data-rating]') || attr(e, ['data-rating']);
+    const ratingMatch = t.match(/(?:^|\s)([4-9]\d)(?:\s|$)/);
+    const rating = coin(ratingText) || (ratingMatch ? Number(ratingMatch[1]) : 0);
+    const time = t.match(/(?:Time(?: Remaining)?\s*:?\s*)(<?\d+)\s*(seconds?|minutes?|hours?)/i);
     const identity = attr(e, ['data-fcplus-identity']) || (resource && name && rating && chem ? resource + ':' + chem : '');
     return {
       auctionId: attr(e, ['data-fcplus-auction','data-trade-id','data-auction-id']),
@@ -198,11 +201,22 @@
       };
     }
     const rows = rowElements().map(parseRow);
-    const searchName = rows.length && rows.every(r => r.name === rows[0].name) ? rows[0].name : '';
+    const searchName = rows.length && rows.every(r => sameName(r.name, rows[0].name)) ? rows[0].name : '';
     const missing = rows.length ? rows.filter(r => !r.identity || !r.auctionId).length : 0;
+    if (currentPage === 'results' && rows.length && missing) {
+      rows.forEach((row, index) => {
+        if (!row.identity && row.name && row.rating) row.identity = 'dry:' + normalizedName(row.name) + ':' + row.rating + ':' + (row.chem || 'Basic');
+        if (!row.auctionId && row.identity) row.auctionId = 'dry:' + index + ':' + row.startPrice + ':' + row.currentBid + ':' + row.buyNow;
+        row.uiBound = false;
+      });
+    }
+    const dryReadable = currentPage === 'results' && rows.filter(r => r.identity && r.auctionId && r.buyNow >= 150).length;
     return { page: currentPage, searchName, rows, capturedAt: Date.now(), coins: coin(text(document, '.view-navbar-currency-coins .value,.ut-coins .value,[data-coins-value]')),
       security: security(), loggedOut: all('button').some(e => /^(log in|sign in)$/i.test(clean(e.textContent))),
-      diagnostics: missing ? missing + ' rows lack verified auction/card IDs; live orders blocked.' : rows.length ? rows.length + ' identified EA rows' : observerReady ? 'EA service observer ready; waiting for a supported market screen' : 'No supported auction rows on this screen',
+      diagnostics: dryReadable ? 'Dry Run fallback: ' + dryReadable + ' market rows readable · Live waits for verified EA auction IDs' :
+        missing ? missing + ' rows are visible but incomplete; waiting for readable market data.' :
+        rows.length ? rows.length + ' identified EA rows' :
+        observerReady ? 'EA observer ready; open Transfer Market search results' : 'Open Transfer Market search results to feed Market Brain',
       url: location.origin + location.pathname };
   }
   function findRow(action) {
