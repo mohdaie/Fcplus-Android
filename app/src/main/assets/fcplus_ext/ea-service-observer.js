@@ -5,10 +5,12 @@
  */
 (function () {
   'use strict';
-  if (window.__fcplusEaObserver041) return;
-  window.__fcplusEaObserver041 = true;
+  if (window.__fcplusEaObserver050) return;
+  window.__fcplusEaObserver050 = true;
 
   const EVENT = 'FCPLUS_EA_OBSERVATION';
+  const STRATEGY_REQUEST = 'FCPLUS_STRATEGY_REQUEST';
+  const STRATEGY_RESPONSE = 'FCPLUS_STRATEGY_RESPONSE';
   const chemistry = {
     250: 'Basic', 251: 'Sniper', 252: 'Finisher', 253: 'Deadeye',
     254: 'Marksman', 255: 'Hawk', 256: 'Artist', 257: 'Architect',
@@ -35,7 +37,7 @@
       const found = Object.values(chemistry).find(value => value.toLowerCase() === clean(raw).toLowerCase());
       return found || '';
     }
-    return chemistry[number(raw)] || '';
+    return chemistry[number(raw)] || 'Basic';
   }
   function state(item, kind) {
     const auction = item && item._auction || {};
@@ -130,6 +132,135 @@
     wrapped.__fcplusOriginal = original;
     itemService[method] = wrapped;
   }
+  function observeOnce(result, timeoutMs = 12000) {
+    return new Promise((resolve, reject) => {
+      if (!result) return reject(new Error('EA market service returned no result'));
+      const timer = setTimeout(() => reject(new Error('EA market search timed out')), timeoutMs);
+      const done = (error, value) => {
+        clearTimeout(timer);
+        if (error) reject(error); else resolve(value);
+      };
+      try {
+        if (typeof result.observe === 'function') {
+          result.observe({}, (_sender, response) => done(null, response));
+        } else if (typeof result.then === 'function') {
+          result.then(value => done(null, value)).catch(error => done(error));
+        } else {
+          done(null, result);
+        }
+      } catch (error) { done(error); }
+    });
+  }
+  function blankCriteria() {
+    const defaults = {
+      type: 'player', category: 'any', position: 'any', zone: -1, nationality: -1,
+      league: -1, club: -1, playStyle: -1, playStylePlus: -1, minBid: 0,
+      maxBid: 0, minBuy: 0, maxBuy: 0, level: 'any', maskedDefId: 0,
+      defId: [], rarities: [], types: [], playStyles: [], roles: [],
+      playerRoles: [], traits: [], chemistryStyles: []
+    };
+    try {
+      const Ctor = window.UTSearchCriteriaDTO || window.UTItemSearchCriteriaDTO || window.UTMarketSearchCriteriaDTO;
+      const dto = typeof Ctor === 'function' ? new Ctor() : {};
+      Object.entries(defaults).forEach(([key, value]) => { try { dto[key] = value; } catch (_) {} });
+      return dto;
+    } catch (_) { return Object.assign({}, defaults); }
+  }
+  async function marketSearch(criteria, page) {
+    const itemService = window.services && window.services.Item;
+    if (!itemService || typeof itemService.searchTransferMarket !== 'function') throw new Error('EA market service unavailable');
+    if (typeof itemService.clearTransferMarketCache === 'function') {
+      try { itemService.clearTransferMarketCache(); } catch (_) {}
+    }
+    return observeOnce(itemService.searchTransferMarket(criteria, page || 1));
+  }
+  function down(price) {
+    if (price < 150) return 0;
+    const step = price <= 1000 ? 50 : price <= 10000 ? 100 : price <= 50000 ? 250 : price <= 100000 ? 500 : 1000;
+    return Math.floor(price / step) * step;
+  }
+  function net(price) { return Math.floor(price * 95 / 100); }
+  function maxEntry(sell, minProfit, minRoi, hardCap) {
+    return down(Math.min(hardCap, net(sell) - minProfit, Math.floor(net(sell) / (1 + minRoi / 100))));
+  }
+  async function silverQuickFlip(params) {
+    const bankroll = Math.max(0, coins());
+    const hardCap = Math.max(1500, Math.min(number(params.maxBuy) || 5000, bankroll > 0 ? Math.floor(bankroll * 0.05) : 5000));
+    const minProfit = Math.max(150, number(params.minProfit) || 200);
+    const minRoi = Math.max(3, number(params.minRoi) || 8);
+    const broad = blankCriteria();
+    broad.type = 'player';
+    broad.level = 'silver';
+    const candidateMap = new Map();
+    for (let page = 1; page <= 3; page++) {
+      const response = await marketSearch(broad, page);
+      for (const item of itemsFrom(response)) {
+        const row = normalize(item, 'market');
+        const definitionId = number(item && (item.definitionId || item.resourceId || item.assetId));
+        if (!definitionId || !row.name || !row.rating || row.buyNow < 150) continue;
+        const key = String(definitionId);
+        const current = candidateMap.get(key) || { definitionId, name: row.name, rating: row.rating, sightings: 0, cheapest: Infinity };
+        current.sightings++;
+        current.cheapest = Math.min(current.cheapest, row.buyNow);
+        candidateMap.set(key, current);
+      }
+    }
+    const seeds = Array.from(candidateMap.values())
+      .sort((a, b) => (b.sightings - a.sightings) || (a.cheapest - b.cheapest))
+      .slice(0, 10);
+    let best = null;
+    for (const seed of seeds) {
+      const exact = blankCriteria();
+      exact.type = 'player';
+      exact.level = 'silver';
+      exact.maskedDefId = seed.definitionId;
+      const response = await marketSearch(exact, 1);
+      const rows = itemsFrom(response).map(item => normalize(item, 'market'))
+        .filter(row => row.buyNow >= 150 && row.chem === 'Basic' && row.name === seed.name && row.rating === seed.rating)
+        .sort((a, b) => a.buyNow - b.buyNow);
+      const unique = [...new Map(rows.filter(row => row.auctionId).map(row => [row.auctionId, row])).values()];
+      if (unique.length < 4) continue;
+      const sell = down(unique[1].buyNow);
+      if (!sell || unique[3].buyNow > sell * 1.15) continue;
+      const ceiling = maxEntry(sell, minProfit, minRoi, hardCap);
+      const entry = unique.find(row => {
+        const bid = row.currentBid > 0 ? row.currentBid : row.startPrice;
+        return (row.buyNow > 0 && row.buyNow <= ceiling) || (bid >= 150 && bid <= ceiling && row.timeSeconds <= 120);
+      });
+      const score = (entry ? Math.max(0, net(sell) - Math.min(entry.buyNow || Infinity, entry.currentBid || entry.startPrice || Infinity)) : 0) +
+        Math.min(unique.length, 21) * 10 + seed.sightings * 20;
+      const candidate = {
+        target: { name: seed.name, rating: seed.rating, chem: 'Basic', identity: String(seed.definitionId) + ':Basic' },
+        marketSell: sell,
+        maxEntry: ceiling,
+        sample: unique.length,
+        sightings: seed.sightings,
+        score,
+        hasEntry: !!entry
+      };
+      if (!best || candidate.hasEntry && !best.hasEntry || candidate.hasEntry === best.hasEntry && candidate.score > best.score) best = candidate;
+    }
+    if (!best) throw new Error('No liquid silver candidate passed the current market checks');
+    return Object.assign(best, {
+      bankroll,
+      parameters: { maxBuy: hardCap, minProfit, minRoi, scanPages: 3, candidateChecks: seeds.length }
+    });
+  }
+
+  window.addEventListener('message', async event => {
+    if (event.source !== window || event.data?.type !== STRATEGY_REQUEST) return;
+    const requestId = clean(event.data.requestId);
+    if (!requestId) return;
+    try {
+      let result;
+      if (event.data.strategy === 'silver_quick_flip') result = await silverQuickFlip(event.data.params || {});
+      else throw new Error('Unknown trading method');
+      window.postMessage({ type: STRATEGY_RESPONSE, requestId, result }, '*');
+    } catch (error) {
+      window.postMessage({ type: STRATEGY_RESPONSE, requestId, error: clean(error && error.message).slice(0, 220) }, '*');
+    }
+  });
+
   function install() {
     try {
       const itemService = window.services && window.services.Item;
