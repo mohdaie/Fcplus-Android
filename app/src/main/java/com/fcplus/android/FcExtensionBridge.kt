@@ -40,7 +40,7 @@ object FcExtensionBridge {
                 },
                 { error ->
                     AppState.update {
-                        it.copy(lastEvent = "FC+ bridge error: ${error.message ?: "unknown"}")
+                        it.copy(lastEvent = "FC+ bridge error: ${error?.message ?: "unknown"}")
                     }
                     onReady()
                 }
