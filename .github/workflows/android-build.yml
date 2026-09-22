@@ -41,6 +41,7 @@ jobs:
       - name: Verify trading state machine
         run: |
           node --check app/src/main/assets/fcplus_ext/content.js
+          node --check app/src/main/assets/fcplus_ext/ea-service-observer.js
           node --test tests/*.test.cjs
 
       - name: Build debug APK
