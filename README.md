@@ -1,6 +1,13 @@
-# FC+ Android 0.4.3
+# FC+ Android 0.5.0
 
 Native Compose / GeckoView app with one shared authenticated mobile EA session.
+
+## v0.5.0 strategy workflow
+
+- Brain is now strategy-first: choose Silver Quick Flip instead of entering a player manually.
+- FC+ scans the EA silver market, groups candidates, checks exact player markets, and proposes a candidate plus buy ceiling/sell level.
+- Scanner status and trading parameters stay visible directly on the Brain page.
+- This release is intended for scanner/candidate validation first; full automatic execution is the next staged step.
 
 ## v0.4.3 field fix
 
