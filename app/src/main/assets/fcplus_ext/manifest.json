@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "FC+ Market Bridge",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "FC+ verified market execution and persistent trade ledger.",
   "browser_specific_settings": {
     "gecko": {
