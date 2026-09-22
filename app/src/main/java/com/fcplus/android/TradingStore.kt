@@ -29,7 +29,7 @@ object TradingStore {
     fun initialize() {
         state = runCatching { JSONObject(prefs.getString("state", "{}")!!) }.getOrDefault(JSONObject())
         settings = runCatching { JSONObject(prefs.getString("settings", "{}")!!) }.getOrDefault(JSONObject())
-        val defaults = JSONObject("""{"dryRun":true,"minProfit":300,"minRoi":8,"maxBuy":5000,"budget":20000,"maxOpen":3,"durationMinutes":20,"intervalSeconds":15,"maxActions":60,"dailyCap":100000,"targets":[],"model":"gemini-2.5-flash","edition":"Current EA SPORTS FC","platform":"Console"}""")
+        val defaults = JSONObject("""{"dryRun":true,"strategy":"silver_quick_flip","minProfit":200,"minRoi":8,"maxBuy":5000,"budget":20000,"maxOpen":3,"durationMinutes":20,"intervalSeconds":12,"maxActions":60,"dailyCap":100000,"targets":[],"model":"gemini-2.5-flash","edition":"Current EA SPORTS FC","platform":"Console"}""")
         defaults.keys().forEach { key -> if (!settings.has(key)) settings.put(key, defaults.get(key)) }
         // Process restarts never silently resume live orders.
         settings.put("dryRun", true)
@@ -46,10 +46,30 @@ object TradingStore {
         val next = JSONObject(settings.toString()).put(key, value)
         saveSettings(next)
     }
+    fun applyStrategy(strategy: String) {
+        check(!running) { "Stop the session before changing trading method" }
+        require(strategy == "silver_quick_flip") { "Trading method is not available yet" }
+        val coins = snapshot.optInt("coins", 0)
+        val maxBuy = if (coins > 0) (coins / 20).coerceIn(1500, 7500) else 5000
+        val budget = if (coins > 0) (coins / 6).coerceIn(5000, 30000) else 20000
+        val next = JSONObject(settings.toString())
+            .put("strategy", strategy)
+            .put("minProfit", 200)
+            .put("minRoi", 8)
+            .put("maxBuy", maxBuy)
+            .put("budget", budget)
+            .put("maxOpen", 3)
+            .put("durationMinutes", 20)
+            .put("intervalSeconds", 12)
+            .put("maxActions", 60)
+            .put("targets", JSONArray())
+        saveSettings(next)
+        AppState.update { it.copy(minProfit = 200, minRoiPercent = 8) }
+    }
     fun start(): String? {
         if (running) return "A trading session is already running"
         if (state.optJSONObject("pending") != null) return "An order is unconfirmed. Use Reconcile on the matching EA screen first."
-        if ((settings.optJSONArray("targets")?.length() ?: 0) == 0 && (state.optJSONArray("ledger")?.length() ?: 0) == 0) return "Add a target or run AI Scout first"
+        if (settings.optString("strategy").isBlank() && (settings.optJSONArray("targets")?.length() ?: 0) == 0 && (state.optJSONArray("ledger")?.length() ?: 0) == 0) return "Choose a trading method first"
         runId = UUID.randomUUID().toString()
         deadline = System.currentTimeMillis() + settings.optInt("durationMinutes", 20).coerceIn(1,60) * 60000L
         running = true
