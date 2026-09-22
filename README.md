@@ -1,4 +1,4 @@
-# FC+ Android 0.4.0
+# FC+ Android 0.4.1
 
 Native Compose / GeckoView app with one shared authenticated mobile EA session.
 
@@ -10,22 +10,25 @@ Native Compose / GeckoView app with one shared authenticated mobile EA session.
 - Budget including outstanding bids, per-card cap, maximum open positions, action interval/count, session deadline, heartbeat timeout and notification Stop.
 - Dry Run by default on process restart. Live mode requires an explicit in-app selection. Changing settings is disabled during a session.
 - Optional Gemini + Google Search target research with FUTBIN/FUT.GG source links, source display and encrypted on-device API key storage. No EA cookies or credentials sent to Gemini. No hardcoded API keys. Model, edition and platform configurable.
+- Read-only EA service observer taps the web app's own Transfer Market, Transfer Targets and Transfer List responses and binds exact auction/card metadata back to visible rows. It does not capture authentication headers or submit transactions; financial actions still pass through the strict visible-UI adapter and native permit gate.
+- DOM parsing remains as a fallback when EA services are unavailable. Ambiguous row-to-auction matches are intentionally left unbound so the trading engine cannot act on them.
+- A Brain-screen Reload EA action reloads the shared mobile Gecko session while trading is stopped, useful after login/session/UI failures.
 - Diagnostics copy contains parsed market fields and ledger, not raw page HTML/cookies/API keys.
 
 ## Verification boundaries — read before live use
 
-This release has deterministic state-machine tests and a CI Android build. It has **not been exercised against an authenticated EA account on a device**. The DOM adapter is deliberately strict: it requires explicit auction IDs, exact card definition IDs, chemistry identity and positive order/sale evidence. If the EA DOM does not expose these fields or uses different selectors/labels, it pauses or refuses live orders. The selectors are compatibility assumptions, not captured production fixtures. Passing CI does not certify live trading compatibility.
+This release has deterministic state-machine tests and a CI Android build. It has **not been fully exercised against an authenticated EA account on a device**. v0.4.1 reduces reliance on brittle HTML by observing EA's own read-only item-service responses, then only binds an observed auction to a visible row when the visible name/rating/prices form one unique match. If that binding cannot be proved, the auction ID is withheld and live orders are blocked. The DOM selectors and service shapes remain compatibility assumptions until confirmed on-device; passing CI does not certify live trading compatibility.
 
 Chem Flip currently trades cards **already carrying** the specified chemistry style. Buying/applying consumables is not implemented. AI Scout is user-triggered, requires a user-supplied Gemini API key/quota, and returns candidates rather than guaranteed opportunities. It is search-grounded research, not an official FUTBIN/FUT.GG pricing API integration. Unattended first login and security challenges are not automated.
 
 ## Device check
 
-1. Install the debug APK from the successful workflow artifact; verify v0.4.0 / build 9.
+1. Install the debug APK from the successful workflow artifact; verify v0.4.1 / build 10.
 2. Open EA Login and sign in. The same page stays mounted when switching to Brain.
 3. Open Targets & settings. Add an exact player name, card rating and chemistry style, or configure AI Scout and research candidates.
-4. Start in Dry Run. Check the diagnostics for identified card/auction IDs. A missing-ID warning means live trading cannot run on that screen; copy diagnostics for adapter repair.
+4. Start in Dry Run. Run a normal EA market search and check diagnostics. "EA service adapter: X/Y exact rows bound" confirms the read-only service observer is matching EA objects to the visible auctions. Any unbound or missing-ID row remains ineligible for live execution.
 5. Stop, review limits, and explicitly enable live mode only after Dry Run behaves correctly.
-6. If an order outcome is uncertain, inspect the matching Transfer Targets/List screen and press Reconcile. Reconciliation reads observations; it never clears an uncertain order just to resume trading.
+6. If EA gets stuck after login/navigation, stop the trader and use Reload EA. If an order outcome is uncertain, inspect the matching Transfer Targets/List screen and press Reconcile. Reconciliation reads observations; it never clears an uncertain order just to resume trading.
 
 ## Build and tests
 
