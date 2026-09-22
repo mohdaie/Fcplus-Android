@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "FC+ Market Bridge",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "FC+ verified market execution and persistent trade ledger.",
   "browser_specific_settings": {
     "gecko": {
@@ -13,6 +13,9 @@
     "nativeMessagingFromContent",
     "geckoViewAddons"
   ],
+  "web_accessible_resources": [
+    "ea-service-observer.js"
+  ],
   "content_scripts": [
     {
       "matches": [
@@ -22,7 +25,7 @@
         "trader-core.js",
         "content.js"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     }
   ]
 }
